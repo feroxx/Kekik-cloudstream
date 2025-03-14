@@ -1,0 +1,7 @@
+com.keyiflerolsun.AnimeciX-pngs-0 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\build\generated\res\pngs\release
+com.keyiflerolsun.AnimeciX-resValues-1 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\build\generated\res\resValues\release
+com.keyiflerolsun.AnimeciX-mergeReleaseResources-2 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\build\intermediates\incremental\release\mergeReleaseResources\merged.dir
+com.keyiflerolsun.AnimeciX-mergeReleaseResources-3 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\build\intermediates\incremental\release\mergeReleaseResources\stripped.dir
+com.keyiflerolsun.AnimeciX-release-4 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\build\intermediates\merged_res\release\mergeReleaseResources
+com.keyiflerolsun.AnimeciX-main-5 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\src\main\res
+com.keyiflerolsun.AnimeciX-release-6 C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX\src\release\res

@@ -1,0 +1,19 @@
+<lint-module
+    format="1"
+    dir="C:\Users\Dilara\Documents\GitHub\Kekik-cloudstream\AnimeciX"
+    name=":AnimeciX"
+    type="LIBRARY"
+    maven="CloudstreamPlugins:AnimeciX:7"
+    agpVersion="8.7.3"
+    buildFolder="build"
+    bootClassPath="C:\Users\Dilara\AppData\Local\Android\sdk\platforms\android-35\android.jar;C:\Users\Dilara\AppData\Local\Android\sdk\build-tools\34.0.0\core-lambda-stubs.jar"
+    javaSourceLevel="1.8"
+    compileTarget="android-35"
+    neverShrinking="true">
+  <lintOptions
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="debug"/>
+</lint-module>
