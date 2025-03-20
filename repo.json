@@ -1,0 +1,8 @@
+{
+    "name": "Turkish Providers Repository | @feroxxcs3",
+    "description": "Türkçe içerikli eklenti havuzu",
+    "manifestVersion": 1,
+    "pluginLists": [
+      "https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/builds/plugins.json"
+    ]
+}
