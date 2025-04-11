@@ -24,7 +24,7 @@ import android.util.Log
 
 class GolgeTV : MainAPI() {
     override var name = "GolgeTV"
-    override var mainUrl = "https://panel.cloudgolge.shop/appMainGetData.php"
+    override var mainUrl = "https://panel202.cloudgolge.shop/appMainGetData.php"
     override val hasMainPage = true
     override var lang = "tr"
     override val supportedTypes = setOf(TvType.Live)
