@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 
 class FilmBip : MainAPI() {
-    override var mainUrl              = "https://filmbip.com/"
+    override var mainUrl              = "https://filmbip.com"
     override var name                 = "FilmBip"
     override val hasMainPage          = true
     override var lang                 = "tr"
