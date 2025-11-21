@@ -16,7 +16,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class JetFilmizle : MainAPI() {
-    override var mainUrl              = "https://jetfilmizle.website"
+    override var mainUrl              = "https://jetfilmizle.website/karanliklar-ulkesi-uyanis-underworld-awakening-turkce-dublaj-izle.html"
     override var name                 = "JetFilmizle"
     override val hasMainPage          = true
     override var lang                 = "tr"
