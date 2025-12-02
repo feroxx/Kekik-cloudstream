@@ -81,7 +81,7 @@ class Dizilla : MainAPI() {
     override val mainPage = mainPageOf(
         "${mainUrl}/tum-bolumler" to "Yeni Eklenen Bölümler",
         "${mainUrl}/arsiv" to "Yeni Eklenen Diziler",
-        "${mainUrl}/dizi-turu/aile" to "Aile",
+        "${mainUrl}/arsiv?page=1&tab=1&sort=date_desc&filterType=2&imdbMin=5&imdbMax=10&yearMin=1900&yearMax=2024&categories=15" to "Aile",
         "${mainUrl}/dizi-turu/aksiyon" to "Aksiyon",
         "${mainUrl}/dizi-turu/bilim-kurgu" to "Bilim Kurgu",
         "${mainUrl}/dizi-turu/dram" to "Dram",
