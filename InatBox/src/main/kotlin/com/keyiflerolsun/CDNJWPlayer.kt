@@ -22,7 +22,7 @@ class CDNJWPlayer : ExtractorApi() {
 				type    = ExtractorLinkType.M3U8
             ) {
                 quality = Qualities.Unknown.value
-        )
     }
+	)
 }
 }
