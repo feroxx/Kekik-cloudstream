@@ -26,8 +26,8 @@ class Vk : ExtractorApi() {
                     url     = m3u8SourceUrl,
 					type    = ExtractorLinkType.M3U8					                    
                 ) {
-				    headers = mapOf("Referer" to mainUrl)
-                    quality = Qualities.Unknown.value,
+				    headers = mapOf("Referer" to mainUrl),
+                    quality = Qualities.Unknown.value
 					}
             )
         } else {

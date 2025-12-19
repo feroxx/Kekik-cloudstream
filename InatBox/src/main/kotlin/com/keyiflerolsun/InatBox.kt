@@ -22,7 +22,7 @@ import com.lagradost.cloudstream3.newLiveStreamLoadResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
-import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -428,9 +428,7 @@ class InatBox : MainAPI() {
                     headers = mapOf("Referer" to headers)
                     }
                 )
-            )
         }
-    }
 
     private suspend fun makeInatRequest(url: String): String? {
         // Extract hostname using URI
