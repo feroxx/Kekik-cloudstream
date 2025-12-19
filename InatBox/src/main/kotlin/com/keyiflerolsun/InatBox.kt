@@ -401,14 +401,15 @@ class InatBox : MainAPI() {
              } else {
                  loadExtractor(sourceUrl, headers["Referer"], subtitleCallback) {
                      callback.invoke(
-                         ExtractorLink(
+                         newExtractorLink(
                              source = it.source,
                              name = contentToProcess.chName,
                              url = it.url,
-                             referer = it.referer,
+							 type = it.type
+							 ) {
                              quality = it.quality,
-                             headers = it.headers,
-                             type = it.type
+                             headers = mapOf("Referer" to headers)
+                             }
                          )
                      )
                  }
@@ -417,14 +418,15 @@ class InatBox : MainAPI() {
         //When no extractor found, try to load as generic
         if (!extractorFound) {
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = this.name,
                     name = contentToProcess.chName,
                     url = sourceUrl,
-                    referer = "",
+					type = if(sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else if(sourceUrl.contains(".mpd")) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
+					) {
                     quality = Qualities.Unknown.value,
-                    headers = headers,
-                    type = if(sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else if(sourceUrl.contains(".mpd")) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
+                    headers = mapOf("Referer" to headers)
+                    }
                 )
             )
         }

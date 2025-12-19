@@ -15,14 +15,14 @@ class CDNJWPlayer : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         callback.invoke(
-            ExtractorLink(
+            newExtractorLink(
                 source  = this.name,
                 name    = this.name,
                 url     = url,
-                referer = referer ?: "",
+				type    = ExtractorLinkType.M3U8
+            ) {
                 quality = Qualities.Unknown.value,
-                type    = ExtractorLinkType.M3U8
-            )
         )
     }
+}
 }
