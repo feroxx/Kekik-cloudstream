@@ -33,6 +33,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.IvParameterSpec
 import android.util.Base64
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONException
@@ -115,7 +116,7 @@ class InatBox : MainAPI() {
 
         val regex = try {
             Regex(query, RegexOption.IGNORE_CASE)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Regex(Regex.escape(query), RegexOption.IGNORE_CASE)
         }
 
@@ -236,7 +237,7 @@ class InatBox : MainAPI() {
                                 this.episode = j + 1
                             }
                         )
-                    } catch (e: JSONException) {
+                    } catch (_: JSONException) {
                         continue
                     }
                 }
@@ -379,7 +380,7 @@ class InatBox : MainAPI() {
             val type = chContent.chType
 
             val jsonResponse = runCatching { makeInatRequest(url) }.getOrNull()
-                ?: getJsonFromEncryptedInatResponse(app.get(url).body?.string() ?: "") ?: return
+                ?: getJsonFromEncryptedInatResponse(app.get(url).body.string()) ?: return
             val firstItem = JSONObject(jsonResponse)
             firstItem.put("chHeaders", headers)
             firstItem.put("chReg", reg)
@@ -393,6 +394,7 @@ class InatBox : MainAPI() {
 
         val sourceUrl = contentToProcess.chUrl
 
+        // Headerları hazırlama kısmı
         val headers: MutableMap<String, String> = mutableMapOf()
         try {
             val chHeaders = contentToProcess.chHeaders
@@ -409,42 +411,27 @@ class InatBox : MainAPI() {
                 headers["Cookie"] = cookie
             }
         } catch (_: Exception) {
-
         }
 
-        val extractorFound =
-            if (sourceUrl.contains("dzen.ru")) {
-                loadExtractor(sourceUrl, subtitleCallback, callback)
-            } else {
-                loadExtractor(sourceUrl, headers["Referer"], subtitleCallback) {
-                    callback.invoke(
-                        newExtractorLink(
-                            source = it.source,
-                            name = contentToProcess.chName,
-                            url = it.url,
-                            type = it.type
-                        ) {
-                            quality = it.quality
-                            this.headers = mapOf("Referer" to (headers["Referer"] ?: ""))
-                        }
-                    )
-                }
-            }
+        val extractorFound = if (sourceUrl.contains("dzen.ru")) {
+            loadExtractor(sourceUrl, subtitleCallback, callback)
+        } else {
+            loadExtractor(sourceUrl, subtitleCallback, callback)
+        }
 
-        //When no extractor found, try to load as generic
+        // Extractor bulunamazsa genel yükleme denemesi
         if (!extractorFound) {
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
                     name = contentToProcess.chName,
                     url = sourceUrl,
-                    type = if (sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else if (sourceUrl.contains(
-                            ".mpd"
-                        )
-                    ) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
+                    type = if (sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else if (sourceUrl.contains(".mpd")) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
                 ) {
-                    quality = Qualities.Unknown.value
+                    // 4. DÜZELTME: 'mapOf("Referer" to headers)' hatalıydı (Map içinde Map).
+                    // Direkt 'headers' değişkenini atıyoruz.
                     this.headers = headers
+                    this.quality = Qualities.Unknown.value
                 }
             )
         }
@@ -484,7 +471,7 @@ class InatBox : MainAPI() {
         )
 
         if (response.isSuccessful) {
-            val encryptedResponse = response.body?.string() ?: ""
+            val encryptedResponse = response.body.string()
             // Log.d("InatBox", "Encrypted response: ${encryptedResponse}")
             return getJsonFromEncryptedInatResponse(encryptedResponse)
         } else {
