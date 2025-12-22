@@ -25,6 +25,7 @@ open class W2MExtractor(override val mainUrl: String, private val context: Conte
     override val requiresReferer = true
     private lateinit var webView: WebView
 
+    @OptIn(Prerelease::class)
     @SuppressLint("SetJavaScriptEnabled")
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
         withContext(Dispatchers.Main) {
