@@ -2,18 +2,28 @@
 
 package com.keyiflerolsun
 
-import com.fasterxml.jackson.annotation.JsonProperty
-import android.util.Log
-import org.jsoup.nodes.Element
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
-import com.lagradost.cloudstream3.utils.StringUtils.decodeUri
-import okhttp3.Interceptor
-import okhttp3.Response
 import android.util.Base64
+import android.util.Log
+import com.lagradost.cloudstream3.Actor
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.fixUrlNull
+import com.lagradost.cloudstream3.mainPageOf
+import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newMovieLoadResponse
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newSubtitleFile
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 import java.util.regex.Pattern
 
 class FullHDFilm : MainAPI() {
@@ -82,7 +92,7 @@ class FullHDFilm : MainAPI() {
         val title       = document.selectFirst("h1")?.text() ?: return null
     
         val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src"))
-        val description = document.select("#details > div:nth-child(2) > div")?.text()?.trim()
+        val description = document.select("#details > div:nth-child(2) > div").text().trim()
         val tags        = document.select("h4 a").map { it.text() }
         val year        = Regex("""(\d+)""").find(document.selectFirst("div.release")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
         val actors = document.selectFirst("div.oyuncular")?.ownText() ?.split(",") ?.map { Actor(it.trim()) } ?: emptyList()
@@ -109,7 +119,7 @@ class FullHDFilm : MainAPI() {
             val iframeSrc = Jsoup.parse(decodedHtml).selectFirst("iframe")?.attr("src")
     
             fixUrlNull(iframeSrc) ?: ""
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
     }
@@ -117,7 +127,7 @@ class FullHDFilm : MainAPI() {
     private fun extractSubtitleUrl(sourceCode: String): String? {
         // playerjsSubtitle değişkenini regex ile bul (genelleştirilmiş)
         val patterns = listOf(
-            Pattern.compile("var playerjsSubtitle = \"\\[Türkçe\\](https?://[^\\s\"]+?\\.srt)\";"),
+            Pattern.compile("var playerjsSubtitle = \"\\[Türkçe](https?://[^\\s\"]+?\\.srt)\";"),
             Pattern.compile("var playerjsSubtitle = \"(https?://[^\\s\"]+?\\.srt)\";"), // Türkçe etiketi olmadan
             Pattern.compile("subtitle:\\s*\"(https?://[^\\s\"]+?\\.srt)\"") // Alternatif subtitle formatı
         )
@@ -182,7 +192,7 @@ class FullHDFilm : MainAPI() {
                 // Altyazı URL’sinin erişilebilirliğini kontrol et
                 val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
                 if (subtitleResponse.isSuccessful) {
-                    subtitleCallback(SubtitleFile("Türkçe", subtitleUrl))
+                    subtitleCallback(newSubtitleFile("Türkçe", subtitleUrl))
                     Log.d("FHDF", "Subtitle added: $subtitleUrl")
                 } else {
                     Log.d("FHDF", "Subtitle URL inaccessible: ${subtitleResponse.code}")

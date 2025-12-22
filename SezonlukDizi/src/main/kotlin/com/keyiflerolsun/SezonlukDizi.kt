@@ -7,6 +7,9 @@ import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class SezonlukDizi : MainAPI() {
     override var mainUrl              = "https://sezonlukdizi8.com"
@@ -99,82 +102,101 @@ class SezonlukDizi : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         Log.d("SZD", "data » $data")
         val document = app.get(data).document
         val aspData = getAspData()
-        val bid      = document.selectFirst("div#dilsec")?.attr("data-id") ?: return false
+        val bid = document.selectFirst("div#dilsec")?.attr("data-id") ?: return false
         Log.d("SZD", "bid » $bid")
 
+        // --- ALTYAZI KISMI ---
         val altyaziResponse = app.post(
             "${mainUrl}/ajax/dataAlternatif${aspData.alternatif}.asp",
             headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-            data    = mapOf(
+            data = mapOf(
                 "bid" to bid,
                 "dil" to "1"
             )
         ).parsedSafe<Kaynak>()
-        altyaziResponse?.takeIf { it.status == "success" }?.data?.forEach { veri ->
-            Log.d("SZD", "dil»1 | veri.baslik » ${veri.baslik}")
 
-            val veriResponse = app.post(
-                "${mainUrl}/ajax/dataEmbed${aspData.embed}.asp",
-                headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-                data    = mapOf("id" to "${veri.id}")
-            ).document
+        if (altyaziResponse?.status == "success" && altyaziResponse.data != null) {
+            for (veri in altyaziResponse.data) {
+                Log.d("SZD", "dil»1 | veri.baslik » ${veri.baslik}")
 
-            val iframe = fixUrlNull(veriResponse.selectFirst("iframe")?.attr("src")) ?: return@forEach
-            Log.d("SZD", "dil»1 | iframe » $iframe")
+                val veriResponse = app.post(
+                    "${mainUrl}/ajax/dataEmbed${aspData.embed}.asp",
+                    headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+                    data = mapOf("id" to "${veri.id}")
+                ).document
 
-            loadExtractor(iframe, "${mainUrl}/", subtitleCallback) { link ->
-                callback.invoke(
-                    ExtractorLink(
-                        source        = "AltYazı - ${veri.baslik}",
-                        name          = "AltYazı - ${veri.baslik}",
-                        url           = link.url,
-                        referer       = link.referer,
-                        quality       = link.quality,
-                        headers       = link.headers,
-                        extractorData = link.extractorData,
-                        type          = link.type
-                    )
-                )
+                val iframeSrc = veriResponse.selectFirst("iframe")?.attr("src")
+                val iframe = fixUrlNull(iframeSrc) ?: continue
+                Log.d("SZD", "dil»1 | iframe » $iframe")
+
+                loadExtractor(iframe, "${mainUrl}/", subtitleCallback) { link ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = "AltYazı - ${veri.baslik}",
+                                name = "AltYazı - ${veri.baslik}",
+                                url = link.url,
+                                type = link.type
+                            ) {
+                                // İsteğinize uygun olarak Quality, Headers'dan önce geliyor.
+                                this.quality = link.quality
+                                this.headers = link.headers
+                            }
+                        )
+                    }
+                }
             }
         }
 
+        // --- DUBLAJ KISMI ---
         val dublajResponse = app.post(
             "${mainUrl}/ajax/dataAlternatif${aspData.alternatif}.asp",
             headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-            data    = mapOf(
+            data = mapOf(
                 "bid" to bid,
                 "dil" to "0"
             )
         ).parsedSafe<Kaynak>()
-        dublajResponse?.takeIf { it.status == "success" }?.data?.forEach { veri ->
-            Log.d("SZD", "dil»0 | veri.baslik » ${veri.baslik}")
 
-            val veriResponse = app.post(
-                "${mainUrl}/ajax/dataEmbed${aspData.embed}.asp",
-                headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-                data    = mapOf("id" to "${veri.id}")
-            ).document
+        if (dublajResponse?.status == "success" && dublajResponse.data != null) {
+            for (veri in dublajResponse.data) {
+                Log.d("SZD", "dil»0 | veri.baslik » ${veri.baslik}")
 
-            val iframe = fixUrlNull(veriResponse.selectFirst("iframe")?.attr("src")) ?: return@forEach
-            Log.d("SZD", "dil»0 | iframe » $iframe")
+                val veriResponse = app.post(
+                    "${mainUrl}/ajax/dataEmbed${aspData.embed}.asp",
+                    headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+                    data = mapOf("id" to "${veri.id}")
+                ).document
 
-            loadExtractor(iframe, "${mainUrl}/", subtitleCallback) { link ->
-                callback.invoke(
-                    ExtractorLink(
-                        source        = "Dublaj - ${veri.baslik}",
-                        name          = "Dublaj - ${veri.baslik}",
-                        url           = link.url,
-                        referer       = link.referer,
-                        quality       = link.quality,
-                        headers       = link.headers,
-                        extractorData = link.extractorData,
-                        type          = link.type
-                    )
-                )
+                val iframeSrc = veriResponse.selectFirst("iframe")?.attr("src")
+                val iframe = fixUrlNull(iframeSrc) ?: continue
+                Log.d("SZD", "dil»0 | iframe » $iframe")
+
+                loadExtractor(iframe, "${mainUrl}/", subtitleCallback) { link ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        callback.invoke(
+                    newExtractorLink(
+                        source = "Dublaj - ${veri.baslik}",
+                        name = "Dublaj - ${veri.baslik}",
+                        url = link.url,
+                        type = link.type
+                    ) {
+                        // Quality, Headers'dan önce
+                        this.quality = link.quality
+                        this.headers = link.headers
+                    }
+                        )
+                    }
+                }
             }
         }
 

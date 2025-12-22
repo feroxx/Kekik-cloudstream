@@ -251,7 +251,7 @@ private fun extractSubtitleUrl(sourceCode: String): String? {
             val subtitleUrl = extractSubtitleFromIframe(data)
             if (subtitleUrl != null) {
                 subtitleCallback.invoke(
-                    SubtitleFile(
+                    newSubtitleFile(
                         lang = "Türkçe",
                         url = subtitleUrl
                     )

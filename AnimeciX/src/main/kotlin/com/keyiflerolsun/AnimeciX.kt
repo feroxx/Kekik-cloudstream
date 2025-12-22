@@ -146,7 +146,7 @@ override suspend fun loadLinks(
     Log.d("ACX", "iframeLink » $iframeLink")
 
     // Eğer iframeLink içinde çift URL varsa düzelt
-    val doubleUrlRegex = Regex("https://animecix.tv/(https://animecix.tv/secure/[^\\s]+)")
+    val doubleUrlRegex = Regex("https://animecix.tv/(https://animecix.tv/secure/\\S+)")
     val match = doubleUrlRegex.find(iframeLink)
     if (match != null) {
         iframeLink = match.groupValues[1]

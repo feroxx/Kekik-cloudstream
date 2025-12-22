@@ -52,7 +52,7 @@ class RecTV : MainAPI() {
         if (response.isSuccessful) {
             val authResponse = try {
                 jacksonObjectMapper().readValue<AuthResponse>(response.text)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 AuthResponse(accessToken = response.text.trim()) 
             }
 
