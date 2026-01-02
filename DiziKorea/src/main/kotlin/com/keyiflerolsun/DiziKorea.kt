@@ -44,12 +44,12 @@ class DiziKorea : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/tum-kore-dizileri/"   to "Kore Dizileri",
-        "${mainUrl}/kore-filmleri-izle1/" to "Kore Filmleri",
-        "${mainUrl}/tayland-dizileri/"    to "Tayland Dizileri",
-        "${mainUrl}/tayland-filmleri/"    to "Tayland Filmleri",
-        "${mainUrl}/cin-dizileri/"        to "Çin Dizileri",
-        "${mainUrl}/cin-filmleri/"        to "Çin Filmleri"
+        "${mainUrl}/sayfa/tum-kore-dizileri/"   to "Kore Dizileri",
+        "${mainUrl}/sayfa/kore-filmleri-izle1/" to "Kore Filmleri",
+        "${mainUrl}/sayfa/tayland-dizileri/"    to "Tayland Dizileri",
+        "${mainUrl}/sayfa/tayland-filmleri/"    to "Tayland Filmleri",
+        "${mainUrl}/sayfa/cin-dizileri/"        to "Çin Dizileri",
+        "${mainUrl}/sayfa/cin-filmleri/"        to "Çin Filmleri"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
