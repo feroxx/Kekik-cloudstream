@@ -81,11 +81,11 @@ class Dizilla : MainAPI() {
     override val mainPage = mainPageOf(
         "${mainUrl}/tum-bolumler" to "Yeni Eklenen Bölümler",
         "${mainUrl}/arsiv" to "Yeni Eklenen Diziler",
-        "${mainUrl}/arsiv?page=1&tab=1&sort=date_desc&filterType=2&imdbMin=5&imdbMax=10&yearMin=1900&yearMax=2024&categories=15" to "Aile",
+        "${mainUrl}/api/bg/findSeries?releaseYearStart=1900&releaseYearEnd=2024&imdbPointMin=5&imdbPointMax=10&categoryIdsComma=15&countryIdsComma=&orderType=date_desc&languageId=-1&currentPage=2&currentPageCount=24&queryStr=&categorySlugsComma=&countryCodesComma=" to "Aile",
         "${mainUrl}/dizi-turu/aksiyon" to "Aksiyon",
         "${mainUrl}/dizi-turu/bilim-kurgu" to "Bilim Kurgu",
         "${mainUrl}/dizi-turu/dram" to "Dram",
-        "${mainUrl}/dizi-turu/fantastik" to "Fantastik",
+        "${mainUrl}/api/bg/findSeries?releaseYearStart=1900&releaseYearEnd=2024&imdbPointMin=5&imdbPointMax=10&categoryIdsComma=12&countryIdsComma=&orderType=date_desc&languageId=-1&currentPage=1&currentPageCount=24&queryStr=&categorySlugsComma=&countryCodesComma=" to "Fantastik",
         "${mainUrl}/dizi-turu/gerilim" to "Gerilim",
         "${mainUrl}/dizi-turu/komedi" to "Komedi",
         "${mainUrl}/dizi-turu/korku" to "Korku",
