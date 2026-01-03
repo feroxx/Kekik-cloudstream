@@ -95,7 +95,8 @@ class Dizilla : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
-        val home = if (request.data.contains("dizi-turu")) {
+        val home = if (request.data.contains("dizi-turu") ||
+    request.data.contains("api")) {
             document.select("span.watchlistitem-").mapNotNull { it.diziler() }
         } else if (request.data.contains("/arsiv")) {
             val response = app.get("${request.data}?page=$page", interceptor = interceptor)
