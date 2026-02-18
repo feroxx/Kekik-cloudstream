@@ -44,7 +44,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class HDFilmCehennemi : MainAPI() {
-    override var mainUrl              = "https://www.hdfilmcehennemi.ws"
+    override var mainUrl              = "https://www.hdfilmcehennemi.nl"
     override var name                 = "HDFilmCehennemi"
     override val hasMainPage          = true
     override var lang                 = "tr"
