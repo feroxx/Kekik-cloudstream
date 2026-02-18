@@ -51,7 +51,7 @@ class DiziPal : MainAPI() {
         "${mainUrl}/diziler"                                       to "Yeni Diziler",
         "${mainUrl}/filmler"                                       to "Yeni Filmler",
         "${mainUrl}/koleksiyon/netflix"                            to "Netflix",
-        "${mainUrl}/koleksiyon/exxen"                              to "Exxen",
+        "${mainUrl}/kanal/exxen"                              to "Exxen",
         "${mainUrl}/koleksiyon/blutv"                              to "BluTV",
         "${mainUrl}/koleksiyon/disney"                             to "Disney+",
         "${mainUrl}/koleksiyon/amazon-prime"                       to "Amazon Prime",
