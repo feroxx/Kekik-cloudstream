@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class SezonlukDizi : MainAPI() {
-    override var mainUrl              = "https://sezonlukdizi8.com"
+    override var mainUrl              = "https://sezonlukdizi.cc"
     override var name                 = "SezonlukDizi"
     override val hasMainPage          = true
     override var lang                 = "tr"
