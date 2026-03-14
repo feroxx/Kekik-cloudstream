@@ -231,7 +231,7 @@ class Dizilla : MainAPI() {
                     item.get("title")?.asText() ?:
                     return@mapNotNull null
 
-                    val slug = item.get("id")?.asText() ?:
+                    val slug = item.get("slug")?.asText() ?:
                     item.get("slug")?.asText() ?:
                     return@mapNotNull null
 
