@@ -295,47 +295,60 @@ class Dizilla : MainAPI() {
     }
 
     private fun decryptDizillaResponse(response: String): String? {
-        return try {
-            println("Dizilla DEBUG - Raw response length: ${response.length}")
-            println("Dizilla DEBUG - First 50 chars: ${response.take(50)}")
-
+        // Önce ECB'yi dene
+        try {
+            println("Dizilla DEBUG - Trying ECB mode...")
             val algorithm = "AES/ECB/PKCS5Padding"
             val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
-
-            println("Dizilla DEBUG - Key bytes: ${privateAESKey.toByteArray().size}") // 32 olmalı
 
             val cipher = Cipher.getInstance(algorithm)
             cipher.init(Cipher.DECRYPT_MODE, keySpec)
 
-            println("Dizilla DEBUG - Base64 decoding...")
             val encryptedBytes = Base64.decode(response, Base64.DEFAULT)
-            println("Dizilla DEBUG - Decoded bytes size: ${encryptedBytes.size}")
+            println("Dizilla DEBUG - ECB - Encrypted bytes size: ${encryptedBytes.size}")
 
-            println("Dizilla DEBUG - AES decrypting...")
             val decryptedBytes = cipher.doFinal(encryptedBytes)
-            println("Dizilla DEBUG - Decrypted bytes size: ${decryptedBytes.size}")
+            println("Dizilla DEBUG - ECB - Decrypted bytes size: ${decryptedBytes.size}")
 
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - Result first 100 chars: ${result.take(100)}")
-
-            result
+            println("Dizilla DEBUG - ECB - Success: ${result.take(50)}")
+            return result
         } catch (e: Exception) {
-            println("Dizilla DEBUG - EXCEPTION: ${e.javaClass.simpleName} - ${e.message}")
-            e.printStackTrace()
+            println("Dizilla DEBUG - ECB failed: ${e.message}")
+        }
 
-            // Daha detaylı hata analizi
-            when (e) {
-                is IllegalArgumentException -> {
-                    println("Dizilla DEBUG - IllegalArgumentException: Base64 formatı hatalı olabilir")
-                }
-                is javax.crypto.BadPaddingException -> {
-                    println("Dizilla DEBUG - BadPaddingException: Anahtar yanlış veya veri bozuk")
-                }
-                is javax.crypto.IllegalBlockSizeException -> {
-                    println("Dizilla DEBUG - IllegalBlockSizeException: Veri blok boyutu uyumsuz")
-                }
+        // ECB başarısız olursa CBC'yi dene
+        try {
+            println("Dizilla DEBUG - Trying CBC mode...")
+            val algorithm = "AES/CBC/PKCS5Padding"
+            val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
+
+            val fullData = Base64.decode(response, Base64.DEFAULT)
+            println("Dizilla DEBUG - CBC - Full data size: ${fullData.size}")
+
+            if (fullData.size < 16) {
+                println("Dizilla DEBUG - CBC - Data too small!")
+                return null
             }
-            null
+
+            val iv = fullData.sliceArray(0 until 16)
+            val encryptedData = fullData.sliceArray(16 until fullData.size)
+            println("Dizilla DEBUG - CBC - IV size: ${iv.size}, Encrypted size: ${encryptedData.size}")
+
+            val ivSpec = IvParameterSpec(iv)
+            val cipher = Cipher.getInstance(algorithm)
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
+
+            val decryptedBytes = cipher.doFinal(encryptedData)
+            println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
+
+            val result = String(decryptedBytes, Charsets.UTF_8)
+            println("Dizilla DEBUG - CBC - Success: ${result.take(50)}")
+            return result
+        } catch (e: Exception) {
+            println("Dizilla DEBUG - CBC failed: ${e.message}")
+            e.printStackTrace()
+            return null
         }
     }
 }
