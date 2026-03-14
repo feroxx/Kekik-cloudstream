@@ -405,44 +405,19 @@ class Dizilla : MainAPI() {
     }
 
     private fun decryptDizillaResponse(response: String): String? {
-        // Önce ECB'yi dene
         try {
-            println("Dizilla DEBUG - Trying ECB mode...")
-            val algorithm = "AES/ECB/PKCS5Padding"
-            val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
-
-            val cipher = Cipher.getInstance(algorithm)
-            cipher.init(Cipher.DECRYPT_MODE, keySpec)
-
-            val encryptedBytes = Base64.decode(response, Base64.DEFAULT)
-            println("Dizilla DEBUG - ECB - Encrypted bytes size: ${encryptedBytes.size}")
-
-            val decryptedBytes = cipher.doFinal(encryptedBytes)
-            println("Dizilla DEBUG - ECB - Decrypted bytes size: ${decryptedBytes.size}")
-
-            val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - ECB - Success: ${result.take(50)}")
-            return result
-        } catch (e: Exception) {
-            println("Dizilla DEBUG - ECB failed: ${e.message}")
-        }
-
-        // ECB başarısız olursa CBC'yi dene
-        try {
-            println("Dizilla DEBUG - Trying CBC mode...")
             val algorithm = "AES/CBC/PKCS5Padding"
             val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
 
             val fullData = Base64.decode(response, Base64.DEFAULT)
             println("Dizilla DEBUG - CBC - Full data size: ${fullData.size}")
 
-            if (fullData.size < 16) {
-                println("Dizilla DEBUG - CBC - Data too small!")
-                return null
-            }
+            // ★★★ DÜZELTME: IV boyutunu kontrol et ★★★
+            // Bazen IV 16 byte değil, 24 byte olabilir (Base64'te)
+            val ivSize = 16 // AES blok boyutu her zaman 16 byte
+            val iv = fullData.sliceArray(0 until ivSize)
+            val encryptedData = fullData.sliceArray(ivSize until fullData.size)
 
-            val iv = fullData.sliceArray(0 until 16)
-            val encryptedData = fullData.sliceArray(16 until fullData.size)
             println("Dizilla DEBUG - CBC - IV size: ${iv.size}, Encrypted size: ${encryptedData.size}")
 
             val ivSpec = IvParameterSpec(iv)
@@ -452,11 +427,34 @@ class Dizilla : MainAPI() {
             val decryptedBytes = cipher.doFinal(encryptedData)
             println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
 
+            // ★★★ DÜZELTME: İlk karakter kontrolü ★★★
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - CBC - Success: ${result.take(500)}")
-            return result
+            println("Dizilla DEBUG - Raw result first char: '${result.firstOrNull()}' (${result.firstOrNull()?.code})")
+            println("Dizilla DEBUG - Raw result first 20: ${result.take(20)}")
+
+            // Eğer ilk karakter '{' değilse, düzelt
+            val fixedResult = if (result.isNotEmpty() && result.first() != '{') {
+                // JSON başlangıcını ara
+                val jsonStart = result.indexOf('{')
+                if (jsonStart >= 0) {
+                    println("Dizilla DEBUG - Found { at position $jsonStart")
+                    result.substring(jsonStart)
+                } else {
+                    // Hala düzelmediyse elle düzelt
+                    if (result.startsWith("essage")) {
+                        "{m$result"
+                    } else {
+                        result
+                    }
+                }
+            } else {
+                result
+            }
+
+            println("Dizilla DEBUG - Fixed result first 50: ${fixedResult.take(50)}")
+            return fixedResult
         } catch (e: Exception) {
-            println("Dizilla DEBUG - CBC failed: ${e.message}")
+            println("Dizilla DEBUG - Decryption failed: ${e.message}")
             e.printStackTrace()
             return null
         }
