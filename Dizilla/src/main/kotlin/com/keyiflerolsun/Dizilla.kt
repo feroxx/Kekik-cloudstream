@@ -131,11 +131,10 @@ class Dizilla : MainAPI() {
 
             } else if (request.data.contains("api/bg/findSeries")) {
                 // API için POST kullan
-                val apiUrl = request.data // URL'de page parametresi yok, POST body'de göndereceğiz
+                val apiUrl = request.data
 
                 println("Dizilla DEBUG - API URL: $apiUrl")
 
-                // POST isteği gönder
                 val response = app.post(
                     apiUrl,
                     headers = mapOf(
@@ -147,7 +146,7 @@ class Dizilla : MainAPI() {
                         "Origin" to mainUrl,
                         "Referer" to mainUrl
                     ),
-                    data = mapOf("page" to page.toString()) // POST body'sinde page parametresi
+                    data = mapOf("page" to page.toString())
                 )
 
                 val responseBody = response.body.string()
@@ -156,18 +155,14 @@ class Dizilla : MainAPI() {
                 val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
                 objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-                // Ana JSON'u parse et
                 val jsonResponse = objectMapper.readTree(responseBody)
                 val success = jsonResponse.get("success")?.asBoolean() ?: false
                 println("Dizilla DEBUG - success: $success")
 
                 if (!success) {
-                    val error = jsonResponse.get("error")?.asText() ?: "Unknown error"
-                    println("Dizilla DEBUG - API error: $error")
                     return newHomePageResponse(request.name, emptyList())
                 }
 
-                // Şifreli veriyi al
                 val encryptedData = jsonResponse.get("response")?.asText()
                 println("Dizilla DEBUG - encryptedData length: ${encryptedData?.length}")
 
@@ -175,7 +170,6 @@ class Dizilla : MainAPI() {
                     return newHomePageResponse(request.name, emptyList())
                 }
 
-                // Şifreyi çöz
                 val decodedData = decryptDizillaResponse(encryptedData)
                 println("Dizilla DEBUG - decodedData success: ${decodedData != null}")
 
@@ -185,23 +179,49 @@ class Dizilla : MainAPI() {
 
                 println("Dizilla DEBUG - decodedData: ${decodedData.take(200)}...")
 
-                // Çözülen veriyi parse et (bu bir dizi olmalı)
-                val itemsArray = objectMapper.readTree(decodedData)
-                println("Dizilla DEBUG - itemsArray isArray: ${itemsArray.isArray}, size: ${itemsArray.size()}")
+                // ★★★ DÜZELTME: JSON'u düzgün formata getir ★★★
+                val jsonString = if (decodedData.trim().startsWith("{")) {
+                    decodedData
+                } else {
+                    // Eksik süslü parantezi ekle
+                    "{ $decodedData }"
+                }
 
-                val home = itemsArray.mapNotNull { item ->
-                    val title = item.get("title")?.asText() ?:
-                    item.get("name")?.asText() ?:
+                println("Dizilla DEBUG - Fixed JSON: ${jsonString.take(200)}...")
+
+                // Düzeltilmiş JSON'u parse et
+                val itemsWrapper = objectMapper.readTree(jsonString)
+
+                // "result" array'ini bul
+                val resultArray = when {
+                    itemsWrapper.has("result") -> itemsWrapper.get("result")
+                    itemsWrapper.isArray -> itemsWrapper
+                    else -> {
+                        println("Dizilla DEBUG - Could not find result array")
+                        return newHomePageResponse(request.name, emptyList())
+                    }
+                }
+
+                if (!resultArray.isArray) {
+                    println("Dizilla DEBUG - resultArray is not an array")
+                    return newHomePageResponse(request.name, emptyList())
+                }
+
+                val home = resultArray.mapNotNull { item ->
+                    val title = item.get("culture_title")?.asText() ?:
+                    item.get("original_title")?.asText() ?:
+                    item.get("title")?.asText() ?:
                     return@mapNotNull null
 
-                    val slug = item.get("slug")?.asText() ?:
-                    item.get("link")?.asText() ?:
+                    val slug = item.get("id")?.asText() ?:
+                    item.get("slug")?.asText() ?:
                     return@mapNotNull null
 
-                    val poster = item.get("poster")?.asText() ?:
+                    val poster = item.get("face_url")?.asText() ?:
+                    item.get("poster")?.asText() ?:
                     item.get("image")?.asText()
 
-                    newTvSeriesSearchResponse(title, fixUrl("/$slug"), TvType.TvSeries) {
+                    newTvSeriesSearchResponse(title, fixUrl("/diziler/$slug"), TvType.TvSeries) {
                         this.posterUrl = fixUrlNull(poster)
                     }
                 }
@@ -210,7 +230,6 @@ class Dizilla : MainAPI() {
                 return newHomePageResponse(request.name, home)
 
             } else {
-                // Diğer case'ler (HTML parsing)
                 var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
                 val home = if (request.data.contains("dizi-turu")) {
                     document.select("span.watchlistitem-").mapNotNull { it.diziler() }
