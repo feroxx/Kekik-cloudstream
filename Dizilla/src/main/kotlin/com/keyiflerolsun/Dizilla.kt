@@ -101,28 +101,28 @@ class Dizilla : MainAPI() {
         } else if (request.data.contains("/arsiv")) {
             val response = app.get("${request.data}?page=$page", interceptor = interceptor)
             val document = response.document
-    
+
             val script = document.selectFirst("script#__NEXT_DATA__")?.data()
             val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
             objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-    
+
             val secureData = objectMapper.readTree(script)
                 .get("props")?.get("pageProps")?.get("secureData")?.asText()
                 ?: return newHomePageResponse(request.name, emptyList())
-    
+            println("Dizilla DEBUG - secureData found: ${true}")
             val decodedData = decryptDizillaResponse(secureData)
                 ?: return newHomePageResponse(request.name, emptyList())
-    
+            println("Dizilla DEBUG - decodedData success: ${true}")
             val json = objectMapper.readTree(decodedData)
             val relatedResults = json.get("RelatedResults") ?: return newHomePageResponse(request.name, emptyList())
             val discoverArchive = relatedResults.get("getDiscoverArchive") ?: return newHomePageResponse(request.name, emptyList())
             val resultArray = discoverArchive.get("result") ?: return newHomePageResponse(request.name, emptyList())
-    
+
             val home = resultArray.mapNotNull {
                 val title = it.get("title")?.asText() ?: return@mapNotNull null
                 val slug = it.get("slug")?.asText() ?: return@mapNotNull null
                 val poster = fixUrlNull(it.get("poster")?.asText())
-    
+
                 newTvSeriesSearchResponse(title, fixUrl("/$slug"), TvType.TvSeries) {
                     this.posterUrl = poster
                 }
@@ -131,7 +131,7 @@ class Dizilla : MainAPI() {
         } else {
             document.select("div.col-span-3 a").mapNotNull { it.sonBolumler() }
         }
-    
+
         return newHomePageResponse(request.name, home)
     }
 
@@ -295,21 +295,47 @@ class Dizilla : MainAPI() {
     }
 
     private fun decryptDizillaResponse(response: String): String? {
-        try {
-            val algorithm = "AES/ECB/PKCS5Padding"  // ECB MODU
+        return try {
+            println("Dizilla DEBUG - Raw response length: ${response.length}")
+            println("Dizilla DEBUG - First 50 chars: ${response.take(50)}")
+
+            val algorithm = "AES/ECB/PKCS5Padding"
             val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
+
+            println("Dizilla DEBUG - Key bytes: ${privateAESKey.toByteArray().size}") // 32 olmalı
 
             val cipher = Cipher.getInstance(algorithm)
             cipher.init(Cipher.DECRYPT_MODE, keySpec)
 
+            println("Dizilla DEBUG - Base64 decoding...")
             val encryptedBytes = Base64.decode(response, Base64.DEFAULT)
-            val decryptedBytes = cipher.doFinal(encryptedBytes)
+            println("Dizilla DEBUG - Decoded bytes size: ${encryptedBytes.size}")
 
-            return String(decryptedBytes, Charsets.UTF_8)
+            println("Dizilla DEBUG - AES decrypting...")
+            val decryptedBytes = cipher.doFinal(encryptedBytes)
+            println("Dizilla DEBUG - Decrypted bytes size: ${decryptedBytes.size}")
+
+            val result = String(decryptedBytes, Charsets.UTF_8)
+            println("Dizilla DEBUG - Result first 100 chars: ${result.take(100)}")
+
+            result
         } catch (e: Exception) {
-            Log.e("Dizilla", "ECB Decryption failed: ${e.message}")
+            println("Dizilla DEBUG - EXCEPTION: ${e.javaClass.simpleName} - ${e.message}")
             e.printStackTrace()
-            return null
+
+            // Daha detaylı hata analizi
+            when (e) {
+                is IllegalArgumentException -> {
+                    println("Dizilla DEBUG - IllegalArgumentException: Base64 formatı hatalı olabilir")
+                }
+                is javax.crypto.BadPaddingException -> {
+                    println("Dizilla DEBUG - BadPaddingException: Anahtar yanlış veya veri bozuk")
+                }
+                is javax.crypto.IllegalBlockSizeException -> {
+                    println("Dizilla DEBUG - IllegalBlockSizeException: Veri blok boyutu uyumsuz")
+                }
+            }
+            null
         }
     }
 }
