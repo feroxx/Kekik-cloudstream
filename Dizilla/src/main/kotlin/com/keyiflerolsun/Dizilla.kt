@@ -97,16 +97,59 @@ class Dizilla : MainAPI() {
         return try {
             println("Dizilla DEBUG - getMainPage: ${request.data}, page: $page")
 
-            if (request.data.contains("/arsiv") || request.data.contains("api/bg/findSeries")) {
-                // API'den veri çek
-                val apiUrl = if (request.data.contains("?")) {
-                    "${request.data}&page=$page"  // Parametre varsa page ekle
-                } else {
-                    "${request.data}?page=$page"  // Yoksa yeni parametre olarak ekle
+            if (request.data.contains("/arsiv")) {
+                // /arsiv için mevcut kod (GET ile çalışıyor)
+                val response = app.get("${request.data}?page=$page", interceptor = interceptor)
+                val document = response.document
+
+                val script = document.selectFirst("script#__NEXT_DATA__")?.data()
+                val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+                objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
+                val secureData = objectMapper.readTree(script)
+                    .get("props")?.get("pageProps")?.get("secureData")?.asText()
+                    ?: return newHomePageResponse(request.name, emptyList())
+
+                val decodedData = decryptDizillaResponse(secureData)
+                    ?: return newHomePageResponse(request.name, emptyList())
+
+                val json = objectMapper.readTree(decodedData)
+                val relatedResults = json.get("RelatedResults") ?: return newHomePageResponse(request.name, emptyList())
+                val discoverArchive = relatedResults.get("getDiscoverArchive") ?: return newHomePageResponse(request.name, emptyList())
+                val resultArray = discoverArchive.get("result") ?: return newHomePageResponse(request.name, emptyList())
+
+                val home = resultArray.mapNotNull {
+                    val title = it.get("title")?.asText() ?: return@mapNotNull null
+                    val slug = it.get("slug")?.asText() ?: return@mapNotNull null
+                    val poster = fixUrlNull(it.get("poster")?.asText())
+
+                    newTvSeriesSearchResponse(title, fixUrl("/$slug"), TvType.TvSeries) {
+                        this.posterUrl = poster
+                    }
                 }
+                return newHomePageResponse(request.name, home)
+
+            } else if (request.data.contains("api/bg/findSeries")) {
+                // API için POST kullan
+                val apiUrl = request.data // URL'de page parametresi yok, POST body'de göndereceğiz
 
                 println("Dizilla DEBUG - API URL: $apiUrl")
-                val response = app.get(apiUrl, interceptor = interceptor)
+
+                // POST isteği gönder
+                val response = app.post(
+                    apiUrl,
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+                        "Accept" to "application/json, text/plain, */*",
+                        "Accept-Language" to "en-US,en;q=0.5",
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                        "Origin" to mainUrl,
+                        "Referer" to mainUrl
+                    ),
+                    data = mapOf("page" to page.toString()) // POST body'sinde page parametresi
+                )
+
                 val responseBody = response.body.string()
                 println("Dizilla DEBUG - Response body: ${responseBody.take(200)}...")
 
@@ -119,10 +162,12 @@ class Dizilla : MainAPI() {
                 println("Dizilla DEBUG - success: $success")
 
                 if (!success) {
+                    val error = jsonResponse.get("error")?.asText() ?: "Unknown error"
+                    println("Dizilla DEBUG - API error: $error")
                     return newHomePageResponse(request.name, emptyList())
                 }
 
-                // ★★★ ŞİFRELİ VERİYİ AL ★★★
+                // Şifreli veriyi al
                 val encryptedData = jsonResponse.get("response")?.asText()
                 println("Dizilla DEBUG - encryptedData length: ${encryptedData?.length}")
 
@@ -163,6 +208,7 @@ class Dizilla : MainAPI() {
 
                 println("Dizilla DEBUG - Found ${home.size} items")
                 return newHomePageResponse(request.name, home)
+
             } else {
                 // Diğer case'ler (HTML parsing)
                 var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
