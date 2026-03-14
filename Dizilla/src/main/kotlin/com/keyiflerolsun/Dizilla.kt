@@ -150,7 +150,7 @@ class Dizilla : MainAPI() {
                 )
 
                 val responseBody = response.body.string()
-                println("Dizilla DEBUG - Response body: ${responseBody.take(500)}...")
+                println("Dizilla DEBUG - Response body: ${responseBody.take(1000)}...")
 
                 val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
                 objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -177,7 +177,7 @@ class Dizilla : MainAPI() {
                     return newHomePageResponse(request.name, emptyList())
                 }
 
-                println("Dizilla DEBUG - Raw decodedData: ${decodedData.take(500)}...")
+                println("Dizilla DEBUG - Raw decodedData: ${decodedData.take(1000)}...")
 
                 // ★★★ MANUEL PARSE - "result" array'ini bul ve ayıkla ★★★
                 val resultStart = decodedData.indexOf("\"result\":[")
@@ -444,7 +444,7 @@ class Dizilla : MainAPI() {
             println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
 
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - CBC - Success: ${result.take(500)}")
+            println("Dizilla DEBUG - CBC - Success: ${result.take(1000)}")
 
             return result
         } catch (e: Exception) {
