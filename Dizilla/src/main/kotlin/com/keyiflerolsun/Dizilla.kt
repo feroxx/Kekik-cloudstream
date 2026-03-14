@@ -94,45 +94,90 @@ class Dizilla : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
-        val home = if (request.data.contains("dizi-turu") ||
-    request.data.contains("api")) {
-            document.select("span.watchlistitem-").mapNotNull { it.diziler() }
-        } else if (request.data.contains("/arsiv")) {
-            val response = app.get("${request.data}?page=$page", interceptor = interceptor)
-            val document = response.document
+        return try {
+            println("Dizilla DEBUG - getMainPage: ${request.data}, page: $page")
 
-            val script = document.selectFirst("script#__NEXT_DATA__")?.data()
-            val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-
-            val secureData = objectMapper.readTree(script)
-                .get("props")?.get("pageProps")?.get("secureData")?.asText()
-                ?: return newHomePageResponse(request.name, emptyList())
-            println("Dizilla DEBUG - secureData found: ${true}")
-            val decodedData = decryptDizillaResponse(secureData)
-                ?: return newHomePageResponse(request.name, emptyList())
-            println("Dizilla DEBUG - decodedData success: ${true}")
-            val json = objectMapper.readTree(decodedData)
-            val relatedResults = json.get("RelatedResults") ?: return newHomePageResponse(request.name, emptyList())
-            val discoverArchive = relatedResults.get("getDiscoverArchive") ?: return newHomePageResponse(request.name, emptyList())
-            val resultArray = discoverArchive.get("result") ?: return newHomePageResponse(request.name, emptyList())
-
-            val home = resultArray.mapNotNull {
-                val title = it.get("title")?.asText() ?: return@mapNotNull null
-                val slug = it.get("slug")?.asText() ?: return@mapNotNull null
-                val poster = fixUrlNull(it.get("poster")?.asText())
-
-                newTvSeriesSearchResponse(title, fixUrl("/$slug"), TvType.TvSeries) {
-                    this.posterUrl = poster
+            if (request.data.contains("/arsiv") || request.data.contains("api/bg/findSeries")) {
+                // API'den veri çek
+                val apiUrl = if (request.data.contains("?")) {
+                    "${request.data}&page=$page"  // Parametre varsa page ekle
+                } else {
+                    "${request.data}?page=$page"  // Yoksa yeni parametre olarak ekle
                 }
-            }
-            return newHomePageResponse(request.name, home)
-        } else {
-            document.select("div.col-span-3 a").mapNotNull { it.sonBolumler() }
-        }
 
-        return newHomePageResponse(request.name, home)
+                println("Dizilla DEBUG - API URL: $apiUrl")
+                val response = app.get(apiUrl, interceptor = interceptor)
+                val responseBody = response.body.string()
+                println("Dizilla DEBUG - Response body: ${responseBody.take(200)}...")
+
+                val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+                objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
+                // Ana JSON'u parse et
+                val jsonResponse = objectMapper.readTree(responseBody)
+                val success = jsonResponse.get("success")?.asBoolean() ?: false
+                println("Dizilla DEBUG - success: $success")
+
+                if (!success) {
+                    return newHomePageResponse(request.name, emptyList())
+                }
+
+                // ★★★ ŞİFRELİ VERİYİ AL ★★★
+                val encryptedData = jsonResponse.get("response")?.asText()
+                println("Dizilla DEBUG - encryptedData length: ${encryptedData?.length}")
+
+                if (encryptedData.isNullOrEmpty()) {
+                    return newHomePageResponse(request.name, emptyList())
+                }
+
+                // Şifreyi çöz
+                val decodedData = decryptDizillaResponse(encryptedData)
+                println("Dizilla DEBUG - decodedData success: ${decodedData != null}")
+
+                if (decodedData == null) {
+                    return newHomePageResponse(request.name, emptyList())
+                }
+
+                println("Dizilla DEBUG - decodedData: ${decodedData.take(200)}...")
+
+                // Çözülen veriyi parse et (bu bir dizi olmalı)
+                val itemsArray = objectMapper.readTree(decodedData)
+                println("Dizilla DEBUG - itemsArray isArray: ${itemsArray.isArray}, size: ${itemsArray.size()}")
+
+                val home = itemsArray.mapNotNull { item ->
+                    val title = item.get("title")?.asText() ?:
+                    item.get("name")?.asText() ?:
+                    return@mapNotNull null
+
+                    val slug = item.get("slug")?.asText() ?:
+                    item.get("link")?.asText() ?:
+                    return@mapNotNull null
+
+                    val poster = item.get("poster")?.asText() ?:
+                    item.get("image")?.asText()
+
+                    newTvSeriesSearchResponse(title, fixUrl("/$slug"), TvType.TvSeries) {
+                        this.posterUrl = fixUrlNull(poster)
+                    }
+                }
+
+                println("Dizilla DEBUG - Found ${home.size} items")
+                return newHomePageResponse(request.name, home)
+            } else {
+                // Diğer case'ler (HTML parsing)
+                var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
+                val home = if (request.data.contains("dizi-turu")) {
+                    document.select("span.watchlistitem-").mapNotNull { it.diziler() }
+                } else {
+                    document.select("div.col-span-3 a").mapNotNull { it.sonBolumler() }
+                }
+                return newHomePageResponse(request.name, home)
+            }
+        } catch (e: Exception) {
+            println("Dizilla DEBUG - getMainPage exception: ${e.message}")
+            e.printStackTrace()
+            newHomePageResponse(request.name, emptyList())
+        }
     }
 
     private fun Element.diziler(): SearchResponse {
