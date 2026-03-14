@@ -177,24 +177,46 @@ class Dizilla : MainAPI() {
                     return newHomePageResponse(request.name, emptyList())
                 }
 
-                println("Dizilla DEBUG - decodedData: ${decodedData.take(200)}...")
+                println("Dizilla DEBUG - Raw decodedData: ${decodedData.take(200)}...")
 
-                // ★★★ DÜZELTME: JSON'u düzgün formata getir ★★★
-                val jsonString = if (decodedData.trim().startsWith("{")) {
-                    decodedData
-                } else {
-                    // Eksik süslü parantezi ekle
-                    "{ $decodedData }"
+                // ★★★ JSON DÜZELTME ★★★
+                val jsonString = when {
+                    decodedData.trim().startsWith("{") -> decodedData
+                    decodedData.contains("\"currentPage\"") -> {
+                        // "currentPage" ile başlıyorsa, etrafına { "pagination": { ... } } ekle
+                        val fixed = "{\"pagination\":{$decodedData}"
+                        println("Dizilla DEBUG - Fixed JSON with pagination: ${fixed.take(200)}...")
+                        fixed
+                    }
+                    decodedData.contains("\"result\"") -> {
+                        // Doğrudan result ile başlıyorsa etrafına süslü parantez ekle
+                        "{ $decodedData }"
+                    }
+                    else -> {
+                        "{ $decodedData }"
+                    }
                 }
 
                 println("Dizilla DEBUG - Fixed JSON: ${jsonString.take(200)}...")
 
                 // Düzeltilmiş JSON'u parse et
-                val itemsWrapper = objectMapper.readTree(jsonString)
+                val itemsWrapper = try {
+                    objectMapper.readTree(jsonString)
+                } catch (e: Exception) {
+                    println("Dizilla DEBUG - JSON parse error: ${e.message}")
+                    // Son çare: Sadece result kısmını bulmaya çalış
+                    val resultMatch = decodedData.substringAfter("\"result\":", "")
+                        .substringBefore("]}") + "]}"
+                    objectMapper.readTree("{\"result\":$resultMatch")
+                }
+
+                println("Dizilla DEBUG - JSON keys: ${itemsWrapper.fieldNames().asSequence().toList()}")
 
                 // "result" array'ini bul
                 val resultArray = when {
                     itemsWrapper.has("result") -> itemsWrapper.get("result")
+                    itemsWrapper.has("data") && itemsWrapper.get("data").has("result") ->
+                        itemsWrapper.get("data").get("result")
                     itemsWrapper.isArray -> itemsWrapper
                     else -> {
                         println("Dizilla DEBUG - Could not find result array")
@@ -202,8 +224,8 @@ class Dizilla : MainAPI() {
                     }
                 }
 
-                if (!resultArray.isArray) {
-                    println("Dizilla DEBUG - resultArray is not an array")
+                if (resultArray == null || !resultArray.isArray) {
+                    println("Dizilla DEBUG - resultArray is null or not an array")
                     return newHomePageResponse(request.name, emptyList())
                 }
 
@@ -221,7 +243,7 @@ class Dizilla : MainAPI() {
                     item.get("poster")?.asText() ?:
                     item.get("image")?.asText()
 
-                    newTvSeriesSearchResponse(title, fixUrl("/diziler/$slug"), TvType.TvSeries) {
+                    newTvSeriesSearchResponse(title, fixUrl("/dizi/$slug"), TvType.TvSeries) {
                         this.posterUrl = fixUrlNull(poster)
                     }
                 }
