@@ -297,21 +297,25 @@ class Dizilla : MainAPI() {
     private fun decryptDizillaResponse(response: String): String? {
         try {
             val algorithm = "AES/CBC/PKCS5Padding"
-            val keySpec = SecretKeySpec(privateAESKey.toByteArray(), "AES")
+            val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
 
-            val iv = ByteArray(16)
+            // 1. Önce Base64'ten çöz
+            val fullData = Base64.decode(response, Base64.DEFAULT)
+
+            // 2. İlk 16 byte IV'dür (AES blok boyutu)
+            val iv = fullData.sliceArray(0 until 16)
+            // 3. Kalan kısım asıl şifrelenmiş veridir
+            val encryptedData = fullData.sliceArray(16 until fullData.size)
+
             val ivSpec = IvParameterSpec(iv)
+            val cipher = Cipher.getInstance(algorithm)
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
 
-            val cipher1 = Cipher.getInstance(algorithm)
-            cipher1.init(Cipher.DECRYPT_MODE, keySpec,ivSpec)
-            val firstIterationData =
-                cipher1.doFinal(Base64.decode(response, Base64.DEFAULT))
-
-            val jsonString = String(firstIterationData)
-
-            return jsonString
+            val decryptedBytes = cipher.doFinal(encryptedData)
+            return String(decryptedBytes, Charsets.UTF_8)
         } catch (e: Exception) {
             Log.e("Dizilla", "Decryption failed: ${e.message}")
+            e.printStackTrace()
             return null
         }
     }
