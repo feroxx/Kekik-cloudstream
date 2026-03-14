@@ -179,55 +179,51 @@ class Dizilla : MainAPI() {
 
                 println("Dizilla DEBUG - Raw decodedData: ${decodedData.take(200)}...")
 
-                // ★★★ JSON DÜZELTME ★★★
-                val jsonString = when {
-                    decodedData.trim().startsWith("{") -> decodedData
-                    decodedData.contains("\"currentPage\"") -> {
-                        // "currentPage" ile başlıyorsa, etrafına { "pagination": { ... } } ekle
-                        val fixed = "{\"pagination\":{$decodedData}"
-                        println("Dizilla DEBUG - Fixed JSON with pagination: ${fixed.take(200)}...")
-                        fixed
-                    }
-                    decodedData.contains("\"result\"") -> {
-                        // Doğrudan result ile başlıyorsa etrafına süslü parantez ekle
-                        "{ $decodedData }"
-                    }
-                    else -> {
-                        "{ $decodedData }"
-                    }
-                }
-
-                println("Dizilla DEBUG - Fixed JSON: ${jsonString.take(200)}...")
-
-                // Düzeltilmiş JSON'u parse et
-                val itemsWrapper = try {
-                    objectMapper.readTree(jsonString)
-                } catch (e: Exception) {
-                    println("Dizilla DEBUG - JSON parse error: ${e.message}")
-                    // Son çare: Sadece result kısmını bulmaya çalış
-                    val resultMatch = decodedData.substringAfter("\"result\":", "")
-                        .substringBefore("]}") + "]}"
-                    objectMapper.readTree("{\"result\":$resultMatch")
-                }
-
-                println("Dizilla DEBUG - JSON keys: ${itemsWrapper.fieldNames().asSequence().toList()}")
-
-                // "result" array'ini bul
-                val resultArray = when {
-                    itemsWrapper.has("result") -> itemsWrapper.get("result")
-                    itemsWrapper.has("data") && itemsWrapper.get("data").has("result") ->
-                        itemsWrapper.get("data").get("result")
-                    itemsWrapper.isArray -> itemsWrapper
-                    else -> {
-                        println("Dizilla DEBUG - Could not find result array")
-                        return newHomePageResponse(request.name, emptyList())
-                    }
-                }
-
-                if (resultArray == null || !resultArray.isArray) {
-                    println("Dizilla DEBUG - resultArray is null or not an array")
+                // ★★★ MANUEL PARSE - "result" array'ini bul ve ayıkla ★★★
+                val resultStart = decodedData.indexOf("\"result\":[")
+                if (resultStart == -1) {
+                    println("Dizilla DEBUG - Could not find result array")
                     return newHomePageResponse(request.name, emptyList())
                 }
+
+                // "result":[ dizisini bulduktan sonra, dizinin sonunu bul
+                var bracketCount = 0
+                var resultEnd = resultStart
+                var inString = false
+
+                for (i in resultStart until decodedData.length) {
+                    val c = decodedData[i]
+
+                    if (c == '"' && (i == 0 || decodedData[i-1] != '\\')) {
+                        inString = !inString
+                    }
+
+                    if (!inString) {
+                        when (c) {
+                            '[' -> bracketCount++
+                            ']' -> {
+                                bracketCount--
+                                if (bracketCount == 0) {
+                                    resultEnd = i
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (bracketCount != 0) {
+                    println("Dizilla DEBUG - Could not find end of result array")
+                    return newHomePageResponse(request.name, emptyList())
+                }
+
+                // result array'ini ayıkla (9 = "result":[ uzunluğu)
+                val resultArrayJson = decodedData.substring(resultStart + 9, resultEnd + 1)
+                println("Dizilla DEBUG - Result array JSON: ${resultArrayJson.take(200)}...")
+
+                // result array'ini parse et
+                val resultArray = objectMapper.readTree(resultArrayJson)
+                println("Dizilla DEBUG - resultArray isArray: ${resultArray.isArray}, size: ${resultArray.size()}")
 
                 val home = resultArray.mapNotNull { item ->
                     val title = item.get("culture_title")?.asText() ?:
@@ -252,6 +248,7 @@ class Dizilla : MainAPI() {
                 return newHomePageResponse(request.name, home)
 
             } else {
+                // Diğer case'ler (HTML parsing)
                 var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
                 val home = if (request.data.contains("dizi-turu")) {
                     document.select("span.watchlistitem-").mapNotNull { it.diziler() }
@@ -434,11 +431,8 @@ class Dizilla : MainAPI() {
             val fullData = Base64.decode(response, Base64.DEFAULT)
             println("Dizilla DEBUG - CBC - Full data size: ${fullData.size}")
 
-            // ★★★ DÜZELTME: IV boyutunu kontrol et ★★★
-            // Bazen IV 16 byte değil, 24 byte olabilir (Base64'te)
-            val ivSize = 16 // AES blok boyutu her zaman 16 byte
-            val iv = fullData.sliceArray(0 until ivSize)
-            val encryptedData = fullData.sliceArray(ivSize until fullData.size)
+            val iv = fullData.sliceArray(0 until 16)
+            val encryptedData = fullData.sliceArray(16 until fullData.size)
 
             println("Dizilla DEBUG - CBC - IV size: ${iv.size}, Encrypted size: ${encryptedData.size}")
 
@@ -449,32 +443,10 @@ class Dizilla : MainAPI() {
             val decryptedBytes = cipher.doFinal(encryptedData)
             println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
 
-            // ★★★ DÜZELTME: İlk karakter kontrolü ★★★
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - Raw result first char: '${result.firstOrNull()}' (${result.firstOrNull()?.code})")
-            println("Dizilla DEBUG - Raw result first 20: ${result.take(20)}")
+            println("Dizilla DEBUG - CBC - Success: ${result.take(100)}")
 
-            // Eğer ilk karakter '{' değilse, düzelt
-            val fixedResult = if (result.isNotEmpty() && result.first() != '{') {
-                // JSON başlangıcını ara
-                val jsonStart = result.indexOf('{')
-                if (jsonStart >= 0) {
-                    println("Dizilla DEBUG - Found { at position $jsonStart")
-                    result.substring(jsonStart)
-                } else {
-                    // Hala düzelmediyse elle düzelt
-                    if (result.startsWith("essage")) {
-                        "{m$result"
-                    } else {
-                        result
-                    }
-                }
-            } else {
-                result
-            }
-
-            println("Dizilla DEBUG - Fixed result first 50: ${fixedResult.take(50)}")
-            return fixedResult
+            return result
         } catch (e: Exception) {
             println("Dizilla DEBUG - Decryption failed: ${e.message}")
             e.printStackTrace()
