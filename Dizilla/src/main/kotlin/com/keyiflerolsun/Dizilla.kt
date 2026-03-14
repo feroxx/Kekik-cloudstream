@@ -81,7 +81,7 @@ class Dizilla : MainAPI() {
     override val mainPage = mainPageOf(
         "${mainUrl}/tum-bolumler" to "Yeni Eklenen Bölümler",
         "${mainUrl}/arsiv" to "Yeni Eklenen Diziler",
-        "${mainUrl}/api/bg/findSeries?releaseYearStart=1900&releaseYearEnd=2024&imdbPointMin=5&imdbPointMax=10&categoryIdsComma=15&countryIdsComma=&orderType=date_desc&languageId=-1&currentPage=2&currentPageCount=24&queryStr=&categorySlugsComma=&countryCodesComma=" to "Aile",
+        "${mainUrl}/api/bg/findSeries?releaseYearStart=1900&releaseYearEnd=2024&imdbPointMin=5&imdbPointMax=10&categoryIdsComma=15&countryIdsComma=&orderType=date_desc&languageId=-1&currentPage=1&currentPageCount=24&queryStr=&categorySlugsComma=&countryCodesComma=" to "Aile",
         "${mainUrl}/dizi-turu/aksiyon" to "Aksiyon",
         "${mainUrl}/dizi-turu/bilim-kurgu" to "Bilim Kurgu",
         "${mainUrl}/dizi-turu/dram" to "Dram",
@@ -296,25 +296,18 @@ class Dizilla : MainAPI() {
 
     private fun decryptDizillaResponse(response: String): String? {
         try {
-            val algorithm = "AES/CBC/PKCS5Padding"
+            val algorithm = "AES/ECB/PKCS5Padding"  // ECB MODU
             val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
 
-            // 1. Önce Base64'ten çöz
-            val fullData = Base64.decode(response, Base64.DEFAULT)
-
-            // 2. İlk 16 byte IV'dür (AES blok boyutu)
-            val iv = fullData.sliceArray(0 until 16)
-            // 3. Kalan kısım asıl şifrelenmiş veridir
-            val encryptedData = fullData.sliceArray(16 until fullData.size)
-
-            val ivSpec = IvParameterSpec(iv)
             val cipher = Cipher.getInstance(algorithm)
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
+            cipher.init(Cipher.DECRYPT_MODE, keySpec)
 
-            val decryptedBytes = cipher.doFinal(encryptedData)
+            val encryptedBytes = Base64.decode(response, Base64.DEFAULT)
+            val decryptedBytes = cipher.doFinal(encryptedBytes)
+
             return String(decryptedBytes, Charsets.UTF_8)
         } catch (e: Exception) {
-            Log.e("Dizilla", "Decryption failed: ${e.message}")
+            Log.e("Dizilla", "ECB Decryption failed: ${e.message}")
             e.printStackTrace()
             return null
         }
