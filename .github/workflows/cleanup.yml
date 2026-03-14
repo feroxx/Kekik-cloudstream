@@ -1,0 +1,72 @@
+name: "Eski Workflow Temizleyici"
+
+on:
+  schedule:
+    # Her Pazar günü saat 00:00'da çalışır (UTC)
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    # İstediğinde manuel olarak başlatabilmen için
+
+permissions:
+  actions: write
+
+jobs:
+  delete-old-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 7 Günden Eski Run'ları Sil
+        shell: python
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          import requests
+          from datetime import datetime, timedelta, timezone
+          import os
+
+          # Yapılandırma
+          token = os.getenv("GITHUB_TOKEN")
+          repo = "${{ github.repository }}"
+          days_to_keep = 7
+          
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json"
+          }
+          
+          cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+          print(f"Eşik Tarihi: {cutoff_date} (Bu tarihten eskiler silinecek)\n")
+
+          url = f"https://api.github.com/repos/{repo}/actions/runs"
+          
+          # İlk birkaç sayfayı kontrol etmek genelde yeterlidir
+          # Çok yoğun bir repo ise sayfa sayısı artırılabilir
+          for page in range(1, 5):
+              response = requests.get(url, headers=headers, params={"per_page": 100, "page": page})
+              
+              if response.status_code != 200:
+                  print(f"API Hatası: {response.status_code}")
+                  break
+                  
+              runs = response.json().get("workflow_runs", [])
+              if not runs:
+                  break
+
+              for run in runs:
+                  # GitHub zaman damgasını parse et
+                  run_date = datetime.strptime(run["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                  
+                  if run_date < cutoff_date:
+                      run_id = run["id"]
+                      # Mevcut çalışan temizlik işlemini silmemek için kontrol
+                      if run_id == int("${{ github.run_id }}"):
+                          continue
+                          
+                      del_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
+                      res = requests.delete(del_url, headers=headers)
+                      
+                      if res.status_code == 204:
+                          print(f"Silindi: ID {run_id} | Ad: {run['display_title']} | Tarih: {run['created_at']}")
+                      else:
+                          print(f"Hata: ID {run_id} silinemedi (Durum: {res.status_code})")
+
+          print("\nTemizlik işlemi tamamlandı.")
