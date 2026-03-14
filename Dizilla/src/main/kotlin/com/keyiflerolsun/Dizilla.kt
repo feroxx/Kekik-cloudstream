@@ -231,7 +231,9 @@ class Dizilla : MainAPI() {
                     item.get("title")?.asText() ?:
                     return@mapNotNull null
 
-                    val slug = createSlugFromTitle(title)
+                    val slug = item.get("slug")?.asText() ?:
+                    item.get("id")?.asText() ?:
+                    return@mapNotNull null
 
                     val poster = item.get("face_url")?.asText() ?:
                     item.get("poster")?.asText() ?:
@@ -248,7 +250,7 @@ class Dizilla : MainAPI() {
             } else {
                 // Diğer case'ler (HTML parsing)
                 var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
-                val home = if (request.data.contains("dizi-turu")) {
+                val home = if (request.data.contains("api")) {
                     document.select("span.watchlistitem-").mapNotNull { it.diziler() }
                 } else {
                     document.select("div.col-span-3 a").mapNotNull { it.sonBolumler() }
@@ -442,7 +444,7 @@ class Dizilla : MainAPI() {
             println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
 
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - CBC - Success: ${result.take(100)}")
+            println("Dizilla DEBUG - CBC - Success: ${result.take(300)}")
 
             return result
         } catch (e: Exception) {
@@ -450,13 +452,5 @@ class Dizilla : MainAPI() {
             e.printStackTrace()
             return null
         }
-    }
-    fun createSlugFromTitle(title: String): String {
-        return title
-            .lowercase()
-            .replace("[^a-z0-9\\s-]".toRegex(), "") // Sadece harf, rakam, boşluk ve tire
-            .replace("\\s+".toRegex(), "-") // Boşlukları tire ile değiştir
-            .replace("-+".toRegex(), "-") // Birden fazla tireyi tek tire yap
-            .trim('-')
     }
 }
