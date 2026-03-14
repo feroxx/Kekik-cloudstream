@@ -231,9 +231,7 @@ class Dizilla : MainAPI() {
                     item.get("title")?.asText() ?:
                     return@mapNotNull null
 
-                    val slug = item.get("slug")?.asText() ?:
-                    item.get("slug")?.asText() ?:
-                    return@mapNotNull null
+                    val slug = createSlugFromTitle(title)
 
                     val poster = item.get("face_url")?.asText() ?:
                     item.get("poster")?.asText() ?:
@@ -452,5 +450,13 @@ class Dizilla : MainAPI() {
             e.printStackTrace()
             return null
         }
+    }
+    fun createSlugFromTitle(title: String): String {
+        return title
+            .lowercase()
+            .replace("[^a-z0-9\\s-]".toRegex(), "") // Sadece harf, rakam, boşluk ve tire
+            .replace("\\s+".toRegex(), "-") // Boşlukları tire ile değiştir
+            .replace("-+".toRegex(), "-") // Birden fazla tireyi tek tire yap
+            .trim('-')
     }
 }
