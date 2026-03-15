@@ -93,12 +93,12 @@ class DiziPal : MainAPI() {
         ).document
         Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
         val home     = if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
-            document.select("div.new-added-list").mapNotNull { it.sonBolumler() }
+            document.select("div.new-added-list div.bg-\\\\[\\\\#22232a\\\\]").mapNotNull { it.sonBolumler() }
         } else {
-            document.select("div.new-added-list").mapNotNull { it.diziler() }
+            document.select("div.new-added-list div.bg-\\\\[\\\\#22232a\\\\]").mapNotNull { it.diziler() }
         }
 
-        return newHomePageResponse(request.name, home, hasNext=false)
+        return newHomePageResponse(request.name, home, hasNext=true)
     }
 
     private fun Element.sonBolumler(): SearchResponse? {
