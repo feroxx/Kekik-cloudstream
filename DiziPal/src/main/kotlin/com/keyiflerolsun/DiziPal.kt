@@ -47,27 +47,26 @@ class DiziPal : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/diziler/son-bolumler"                          to "Son Bölümler",
-        "${mainUrl}/yabanci-dizi-izle"                                       to "Yeni Diziler",
-        "${mainUrl}/filmler"                                       to "Yeni Filmler",
-        "${mainUrl}/koleksiyon/netflix"                            to "Netflix",
-        "${mainUrl}/kanal/exxen"                              to "Exxen",
-        "${mainUrl}/koleksiyon/blutv"                              to "BluTV",
-        "${mainUrl}/koleksiyon/disney"                             to "Disney+",
-        "${mainUrl}/koleksiyon/amazon-prime"                       to "Amazon Prime",
-        "${mainUrl}/koleksiyon/tod-bein"                           to "TOD (beIN)",
-        "${mainUrl}/koleksiyon/gain"                               to "Gain",
-        "${mainUrl}/tur/mubi"                                      to "Mubi",
-        "${mainUrl}/diziler?kelime=&durum=&tur=26&type=&siralama=" to "Anime",
-        "${mainUrl}/diziler?kelime=&durum=&tur=5&type=&siralama="  to "Bilimkurgu Dizileri",
-        "${mainUrl}/tur/bilimkurgu"                                to "Bilimkurgu Filmleri",
-        "${mainUrl}/diziler?kelime=&durum=&tur=11&type=&siralama=" to "Komedi Dizileri",
-        "${mainUrl}/tur/komedi"                                    to "Komedi Filmleri",
-        "${mainUrl}/diziler?kelime=&durum=&tur=4&type=&siralama="  to "Belgesel Dizileri",
-        "${mainUrl}/tur/belgesel"                                  to "Belgesel Filmleri",
-        "${mainUrl}/diziler?kelime=&durum=&tur=25&type=&siralama=" to "Erotik Diziler",
-        "${mainUrl}/tur/erotik"                                    to "Erotik Filmler",
-        // "${mainUrl}/diziler?kelime=&durum=&tur=1&type=&siralama="  to "Aile",            // ! Fazla kategori olduğu için geç yükleniyor..
+        "${mainUrl}/yabanci-dizi-izle"                 to "Yeni Diziler",
+        "${mainUrl}/hd-film-izle"                                  to "Yeni Filmler",
+        "${mainUrl}/kanal/netflix"                                 to "Netflix",
+        "${mainUrl}/kanal/exxen"                                   to "Exxen",
+        "${mainUrl}/kanal/max"                                     to "Max",
+        "${mainUrl}/kanal/disney"                                  to "Disney+",
+        "${mainUrl}/kanal/amazon"                                  to "Amazon Prime",
+        "${mainUrl}/kanal/tod"                                     to "TOD (beIN)",
+        "${mainUrl}/kanal/tabii"                                   to "Tabii",
+        "${mainUrl}/kanal/hulu"                                    to "Hulu",
+        //"${mainUrl}/diziler?kelime=&durum=&tur=26&type=&siralama=" to "Anime",
+        //"${mainUrl}/diziler?kelime=&durum=&tur=5&type=&siralama="  to "Bilimkurgu Dizileri",
+        //"${mainUrl}/tur/bilimkurgu"                                to "Bilimkurgu Filmleri",
+        //"${mainUrl}/diziler?kelime=&durum=&tur=11&type=&siralama=" to "Komedi Dizileri",
+        //"${mainUrl}/tur/komedi"                                    to "Komedi Filmleri",
+        //"${mainUrl}/diziler?kelime=&durum=&tur=4&type=&siralama="  to "Belgesel Dizileri",
+        //"${mainUrl}/tur/belgesel"                                  to "Belgesel Filmleri",
+        //"${mainUrl}/diziler?kelime=&durum=&tur=25&type=&siralama=" to "Erotik Diziler",
+        //"${mainUrl}/tur/erotik"                                    to "Erotik Filmler",
+        // "${mainUrl}/diziler?kelime=&durum=&tur=1&type=&siralama="  to "Aile",
         // "${mainUrl}/diziler?kelime=&durum=&tur=2&type=&siralama="  to "Aksiyon",
         // "${mainUrl}/diziler?kelime=&durum=&tur=3&type=&siralama="  to "Animasyon",
         // "${mainUrl}/diziler?kelime=&durum=&tur=4&type=&siralama="  to "Belgesel",
@@ -93,10 +92,10 @@ class DiziPal : MainAPI() {
             request.data, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
         Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
-        val home     = if (request.data.contains("/yabanci-dizi-izle")) {
+        val home     = if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
             document.select("div.new-added-list").mapNotNull { it.sonBolumler() }
         } else {
-            document.select("article.type2 ul li").mapNotNull { it.diziler() }
+            document.select("div.new-added-list").mapNotNull { it.diziler() }
         }
 
         return newHomePageResponse(request.name, home, hasNext=false)
@@ -116,9 +115,9 @@ class DiziPal : MainAPI() {
     }
 
     private fun Element.diziler(): SearchResponse? {
-        val title     = this.selectFirst("span.title")?.text() ?: return null
+        val title     = this.selectFirst("div.img alt")?.text() ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
