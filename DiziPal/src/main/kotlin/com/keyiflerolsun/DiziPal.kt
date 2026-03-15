@@ -48,7 +48,7 @@ class DiziPal : MainAPI() {
 
     override val mainPage = mainPageOf(
         "${mainUrl}/diziler/son-bolumler"                          to "Son Bölümler",
-        "${mainUrl}/diziler"                                       to "Yeni Diziler",
+        "${mainUrl}/yabanci-dizi-izle"                                       to "Yeni Diziler",
         "${mainUrl}/filmler"                                       to "Yeni Filmler",
         "${mainUrl}/koleksiyon/netflix"                            to "Netflix",
         "${mainUrl}/kanal/exxen"                              to "Exxen",
@@ -93,8 +93,8 @@ class DiziPal : MainAPI() {
             request.data, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
         Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
-        val home     = if (request.data.contains("/diziler/son-bolumler")) {
-            document.select("div.episode-item").mapNotNull { it.sonBolumler() } 
+        val home     = if (request.data.contains("/yabanci-dizi-izle")) {
+            document.select("div.new-added-list").mapNotNull { it.sonBolumler() }
         } else {
             document.select("article.type2 ul li").mapNotNull { it.diziler() }
         }
@@ -103,7 +103,7 @@ class DiziPal : MainAPI() {
     }
 
     private fun Element.sonBolumler(): SearchResponse? {
-        val name      = this.selectFirst("div.name")?.text() ?: return null
+        val name      = this.selectFirst("div.img alt")?.text() ?: return null
         val episode   = this.selectFirst("div.episode")?.text()?.trim()?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
         val title     = "$name $episode"
 
