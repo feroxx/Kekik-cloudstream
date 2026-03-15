@@ -231,9 +231,12 @@ class Dizilla : MainAPI() {
                     item.get("title")?.asText() ?:
                     return@mapNotNull null
 
-                    val slug = item.get("slug")?.asText() ?:
-                    item.get("id")?.asText() ?:
-                    return@mapNotNull null
+                    val slug = item.get("original_title")?.asText()
+                        ?.replace(Regex("[^a-zA-Z0-9\\s-]"), "") // Önce özel karakterleri temizle
+                        ?.replace(" ", "-") // Boşlukları tire ile değiştir
+                        ?.replace(Regex("-+"), "-") // Birden fazla tireyi tek tire yap
+                        ?.lowercase()
+                        ?: return@mapNotNull null
 
                     val poster = item.get("face_url")?.asText() ?:
                     item.get("poster")?.asText() ?:
