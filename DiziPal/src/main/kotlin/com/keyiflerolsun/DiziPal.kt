@@ -95,7 +95,7 @@ class DiziPal : MainAPI() {
         val home     = if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
             document.select("div.new-added-list div.bg-\\\\[\\\\#22232a\\\\]").mapNotNull { it.sonBolumler() }
         } else {
-            document.select("div.new-added-list div.bg-\\\\[\\\\#22232a\\\\]").mapNotNull { it.diziler() }
+            document.select("div.new-added-list div.bg-\\[\\#22232a\\]").mapNotNull { it.diziler() }
         }
 
         return newHomePageResponse(request.name, home, hasNext=true)
