@@ -150,7 +150,7 @@ class Dizilla : MainAPI() {
                 )
 
                 val responseBody = response.body.string()
-                println("Dizilla DEBUG - Response body: ${responseBody.take(1000)}...")
+                println("Dizilla DEBUG - Response body: ${responseBody.take(10000)}...")
 
                 val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
                 objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -177,7 +177,7 @@ class Dizilla : MainAPI() {
                     return newHomePageResponse(request.name, emptyList())
                 }
 
-                println("Dizilla DEBUG - Raw decodedData: ${decodedData.take(1000)}...")
+                println("Dizilla DEBUG - Raw decodedData: ${decodedData.take(10000)}...")
 
                 // ★★★ MANUEL PARSE - "result" array'ini bul ve ayıkla ★★★
                 val resultStart = decodedData.indexOf("\"result\":[")
@@ -226,8 +226,8 @@ class Dizilla : MainAPI() {
                 println("Dizilla DEBUG - resultArray isArray: ${resultArray.isArray}, size: ${resultArray.size()}")
 
                 val home = resultArray.mapNotNull { item ->
-                    val title = item.get("culture_title")?.asText() ?:
-                    item.get("original_title")?.asText() ?:
+                    val title = item.get("original_title")?.asText() ?:
+                    item.get("culture_title")?.asText() ?:
                     item.get("title")?.asText() ?:
                     return@mapNotNull null
 
@@ -238,8 +238,9 @@ class Dizilla : MainAPI() {
                         ?.lowercase()
                         ?: return@mapNotNull null
 
-                    val poster = item.get("face_url")?.asText() ?:
+                    val poster = item.get("poster_url")?.asText() ?:
                     item.get("poster")?.asText() ?:
+                    item.get("face_url")?.asText() ?:
                     item.get("image")?.asText()
 
                     newTvSeriesSearchResponse(title, fixUrl("/dizi/$slug"), TvType.TvSeries) {
@@ -447,7 +448,7 @@ class Dizilla : MainAPI() {
             println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
 
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - CBC - Success: ${result.take(1000)}")
+            println("Dizilla DEBUG - CBC - Success: ${result.take(10000)}")
 
             return result
         } catch (e: Exception) {
