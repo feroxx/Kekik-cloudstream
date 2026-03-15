@@ -3,16 +3,16 @@
 package com.keyiflerolsun
 
 import android.util.Log
-import org.jsoup.nodes.Element
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.utils.*
 import okhttp3.Interceptor
 import okhttp3.Response
+import org.json.JSONObject
 import org.jsoup.Jsoup
-import java.net.URLEncoder
+import org.jsoup.nodes.Element
 
 class DiziPal : MainAPI() {
     override var mainUrl              = "https://dizipal1542.com"
@@ -91,7 +91,7 @@ class DiziPal : MainAPI() {
         val document = app.get(
             request.data, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
-        Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
+        //Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
         val home     = if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
             document.select("div.new-added-list div.bg-\\[\\#22232a\\]").mapNotNull { it.sonBolumler() }
         } else {
@@ -165,16 +165,14 @@ class DiziPal : MainAPI() {
         val document = app.get(url, interceptor = interceptor, headers = getHeaders(mainUrl)).document
 
         val poster      = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
-        val year        = document.selectXpath("//div[text()='Yapım Yılı']//following-sibling::div").text().trim().toIntOrNull()
+        val year        = document.selectXpath("//div[text()='Yıl']//following-sibling::div").text().trim().toIntOrNull()
         val description = document.selectFirst("div.summary p")?.text()?.trim()
-        val tags        = document.selectXpath("//div[text()='Türler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
-        val duration    = Regex("(\\d+)").find(document.selectXpath("//div[text()='Ortalama Süre']//following-sibling::div").text())?.value?.toIntOrNull()
+        val tags        = document.selectXpath("//div[text()='Kategoriler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
+        val duration    = Regex("(\\d+)").find(document.selectXpath("//div[text()='Süre']//following-sibling::div").text())?.value?.toIntOrNull()
 
         if (url.contains("/dizi/")) {
-            val title       = document.selectFirst("div.cover h5")?.text() ?: return null
-
-            val episodes    = document.select("div.episode-item").mapNotNull {
-                val epName    = it.selectFirst("div.name")?.text()?.trim() ?: return@mapNotNull null
+            val title       = document.selectFirst("div.flex h2")?.text() ?: return null
+            val episodes    = document.select("ul.episodes").mapNotNull { val epName    = it.selectFirst("div.flex title")?.text()?.trim() ?: return@mapNotNull null
                 val epHref    = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
                 val epEpisode = it.selectFirst("div.episode")?.text()?.trim()?.split(" ")?.get(2)?.replace(".", "")?.toIntOrNull()
                 val epSeason  = it.selectFirst("div.episode")?.text()?.trim()?.split(" ")?.get(0)?.replace(".", "")?.toIntOrNull()
@@ -206,74 +204,178 @@ class DiziPal : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("DZP", "data » $data")
-        val document = app.get(data, interceptor = interceptor, headers = getHeaders(mainUrl)).document
-        val iframe   = document.selectFirst(".series-player-container iframe")?.attr("src") ?: document.selectFirst("div#vast_new iframe")?.attr("src") ?: return false
-        Log.d("DZP", "iframe » $iframe")
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        try {
+            // 1. BÖLÜM SAYFASINI ÇEK (dizipal)
+            Log.d("DZP", "loadLinks başladı - data: $data")
 
-        val iSource = app.get(iframe, referer="${mainUrl}/").text
-        val m3uLink = Regex("""file:"([^"]+)""").find(iSource)?.groupValues?.get(1)
-        if (m3uLink == null) {
-            Log.d("DZP", "iSource » $iSource")
-            return loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
-        }
+            // Ana sayfadan cookie'leri almak için önce bir istek yap
+            val mainPageResponse = app.get("https://dizipal1542.com/", headers = getHeaders(mainUrl))
 
-        val subtitles = Regex(""""subtitle":"([^"]+)""").find(iSource)?.groupValues?.get(1)
-        if (subtitles != null) {
-            if (subtitles.contains(",")) {
-                subtitles.split(",").forEach {
-                    val subLang = it.substringAfter("[").substringBefore("]")
-                    val subUrl  = it.replace("[${subLang}]", "")
+            // Cookie'leri sakla - Set-Cookie header'ından al
+            val cookieString = mainPageResponse.headers.values("Set-Cookie")
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString("; ") { cookie ->
+                    cookie.substringBefore(";")
+                } ?: ""
 
-                    subtitleCallback.invoke(
-                        SubtitleFile(
-                            lang = subLang,
-                            url  = fixUrl(subUrl)
-                        )
-                    )
-                }
-            } else {
-                val subLang = subtitles.substringAfter("[").substringBefore("]")
-                val subUrl  = subtitles.replace("[${subLang}]", "")
+            Log.d("DZP", "Cookie: $cookieString")
 
-                subtitleCallback.invoke(
-                    SubtitleFile(
-                        lang = subLang,
-                        url  = fixUrl(subUrl)
-                    )
-                )
+            // Bölüm sayfasını çek (gerekli header ve cookie'lerle)
+            val episodeHeaders = getHeaders(mainUrl).toMutableMap()
+            if (cookieString.isNotEmpty()) {
+                episodeHeaders["Cookie"] = cookieString
             }
+
+            val episodeDocument = app.get(data, headers = episodeHeaders).document
+
+            // 2. İFRAME URL'SİNİ BUL
+            val iframeUrl = episodeDocument.selectFirst("iframe")?.attr("src")
+                ?: episodeDocument.selectFirst("div#vast_new iframe")?.attr("src")
+                ?: episodeDocument.selectFirst(".player iframe")?.attr("src")
+                ?: run {
+                    // JavaScript içinde openPlayer varsa onu da kontrol et
+                    val scriptContent = episodeDocument.selectFirst("script:containsData(openPlayer)")?.data()
+                    if (scriptContent != null) {
+                        Regex("""openPlayer\('([^']+)'""").find(scriptContent)?.groupValues?.get(1)?.let { param ->
+                            "https://sn.dplayer82.site/iframe.php?v=$param"
+                        }
+                    } else null
+                } ?: return false
+
+            Log.d("DZP", "iframeUrl: $iframeUrl")
+
+            // 3. İFRAME SAYFASINI ÇEK
+            val iframeHeaders = mutableMapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
+                "Referer" to data,
+                "Origin" to "https://dizipal1542.com"
+            )
+            if (cookieString.isNotEmpty()) {
+                iframeHeaders["Cookie"] = cookieString
+            }
+
+            val iframeResponse = app.get(iframeUrl, headers = iframeHeaders)
+            val iframeHtml = iframeResponse.text
+            Log.d("DZP", "iframeHtml length: ${iframeHtml.length}")
+
+            // 4. source2.php PARAMETRESİNİ BUL (openPlayer içindeki v parametresi)
+            val source2Param = Regex("""openPlayer\('([^']+)'""").find(iframeHtml)?.groupValues?.get(1)
+                ?: Regex("""source2\.php\?v=([^"']+)""").find(iframeHtml)?.groupValues?.get(1)
+                ?: return false
+
+            Log.d("DZP", "source2Param: $source2Param")
+
+            // 5. source2.php'YE İSTEK AT
+            val source2Url = "https://sn.dplayer82.site/source2.php?v=$source2Param"
+            val source2Headers = mutableMapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
+                "Referer" to iframeUrl,
+                "Origin" to "https://sn.dplayer82.site",
+                "X-Requested-With" to "XMLHttpRequest"
+            )
+            if (cookieString.isNotEmpty()) {
+                source2Headers["Cookie"] = cookieString
+            }
+
+            val source2Response = app.get(source2Url, headers = source2Headers)
+
+            Log.d("DZP", "source2Response: ${source2Response.text}")
+
+            // 6. JSON'DAN VİDEO VE ALTYAZI LİNKLERİNİ ÇEK
+            val json = JSONObject(source2Response.text)
+
+            if (json.getBoolean("state") && !json.getBoolean("expired")) {
+                val playlist = json.getJSONArray("playlist")
+
+                // Tüm kaynakları dolaş (birden fazla kalite/versiyon olabilir)
+                for (i in 0 until playlist.length()) {
+                    val item = playlist.getJSONObject(i)
+                    val sources = item.getJSONArray("sources")
+
+                    for (j in 0 until sources.length()) {
+                        val source = sources.getJSONObject(j)
+                        val videoUrl = source.getString("file")
+                        val videoTitle = source.optString("title", "Bilinmeyen")
+                        val videoType = source.getString("type")
+
+                        if (videoType == "hls") {
+                            // M3U8 linkini callback'e gönder
+                            callback.invoke(
+                                newExtractorLink(
+                                    source = "Dizipal",
+                                    name = "$videoTitle - Kaynak ${j+1}",
+                                    url = videoUrl,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    headers = mapOf(
+                                        "Referer" to "https://sn.dplayer82.site/",
+                                        "Origin" to "https://sn.dplayer82.site",
+                                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                    )
+                                    quality = when {
+                                        videoTitle.contains("1080") -> Qualities.P1080.value
+                                        videoTitle.contains("720") -> Qualities.P720.value
+                                        videoTitle.contains("480") -> Qualities.P480.value
+                                        videoTitle.contains("360") -> Qualities.P360.value
+                                        else -> Qualities.Unknown.value
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // 7. ALTYAZILARI ÇEK (openPlayer parametrelerinden)
+                val subtitlesMatch = Regex("""\[(.*?)\]""").findAll(iframeHtml).lastOrNull()
+                if (subtitlesMatch != null) {
+                    Regex("""\[([^\]]+)\]([^,]+)""").findAll(subtitlesMatch.value).forEach { match ->
+                        val lang = match.groupValues[1]
+                        val url = match.groupValues[2].trim()
+
+                        subtitleCallback.invoke(
+                            SubtitleFile(
+                                lang = when (lang.lowercase()) {
+                                    "türkçe" -> "Türkçe"
+                                    "ingilizce" -> "İngilizce"
+                                    "english" -> "İngilizce"
+                                    "turkish" -> "Türkçe"
+                                    else -> lang
+                                },
+                                url = if (url.startsWith("http")) url else "https:$url"
+                            )
+                        )
+                    }
+                }
+
+                return true
+            }
+
+        } catch (e: Exception) {
+            Log.e("DZP", "loadLinks hata: ${e.message}")
+            e.printStackTrace()
         }
 
-        callback.invoke(
-            newExtractorLink(
-        source = this.name,
-        name = this.name,
-        url = m3uLink,
-        type = ExtractorLinkType.M3U8
-        ) {
-        headers = mapOf("Referer" to "${mainUrl}/")
-        quality = Qualities.Unknown.value
-          }
-        )
-
-
-        // M3u8Helper.generateM3u8(
-        //     source    = this.name,
-        //     name      = this.name,
-        //     streamUrl = m3uLink,
-        //     referer   = "${mainUrl}/"
-        // ).forEach(callback)
-
-        return true
+        return false
     }
-        companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
 
-        private fun getHeaders(referer: String): Map<String, String> = mapOf(
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "User-Agent" to USER_AGENT,
+    // Header'ları oluşturan yardımcı fonksiyon - Map<String, String> döndürür
+    private fun getHeaders(baseUrl: String): Map<String, String> {
+        return mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
+            "Referer" to baseUrl
         )
-        }
+    }
 }
+
