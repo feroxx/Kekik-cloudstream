@@ -19,6 +19,8 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import java.util.Base64
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 class DiziPal : MainAPI() {
     override var mainUrl              = "https://dizipal1542.com"
@@ -233,26 +235,29 @@ class DiziPal : MainAPI() {
             val payloadJson = JSONObject(encryptedDivText)
             val ciphertext = payloadJson.getString("ciphertext")
             val ivHex = payloadJson.getString("iv")
-            val saltHex = payloadJson.getString("salt")
+            // JS'de Utf8.parse() ile okunduğu için değişken adını saltStr yaptık
+            val saltStr = payloadJson.getString("salt")
 
-            // 4. Parola ile AES Şifresini Çöz
-            val secret = "!!22xx!!90!!"
-            val decryptedJsonString = decryptPayload(ciphertext, ivHex, saltHex, secret)
+            // 4. AES Şifresini Çöz (Secret key artık fonksiyonun kendi içinde)
+            val decryptedJsonString = decryptPayload(ciphertext, ivHex, saltStr)
+
+            // Decrypt işlemi hata fırlatıp boş dönerse akışı durdur
+            if (decryptedJsonString.isEmpty()) {
+                Log.e("DZP", "Şifre çözme işlemi boş döndü veya başarısız oldu.")
+                return false
+            }
+
             Log.d("DZP", "Başarıyla Çözülen Veri: $decryptedJsonString")
 
             // 5. Çözülen Veriyi Parse Et ve Oynatıcıya Gönder
-            // Not: Çözülen verinin yapısına göre burayı güncellemen gerekebilir.
-            // Genelde JSON Array (liste) veya Object (playlist formatında) döner.
             if (decryptedJsonString.trim().startsWith("[")) {
                 val array = JSONArray(decryptedJsonString)
                 parseJsonArrayForLinks(array, callback, subtitleCallback)
             } else {
                 val obj = JSONObject(decryptedJsonString)
-                // Eğer eski source2.php formatındaysa:
                 if (obj.has("playlist")) {
                     parsePlaylistObject(obj, callback, subtitleCallback)
                 } else {
-                    // Farklı bir obje formatıysa logla
                     Log.e("DZP", "Bilinmeyen JSON Objesi formatı: $decryptedJsonString")
                 }
             }
@@ -269,35 +274,42 @@ class DiziPal : MainAPI() {
     /**
      * Senior Dokunuşu: Kriptografi Katmanı
      */
-    private fun decryptPayload(ciphertextB64: String, ivHex: String, saltHex: String, secret: String): String {
-        // Hex'i ByteArray'e çeviren yardımcı lambda
-        val hexToBytes = { hex: String ->
-            hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    private fun decryptPayload(ciphertextB64: String, ivHex: String, saltStr: String): String {
+        try {
+            // 1. Yeni Devasa Parola
+            val secret = "3hPn4uCjTVtfYWcjIcoJQ4cL1WWk1qxXI39egLYOmNv6IblA7eKJz68uU3eLzux1biZLCms0quEjTYniGv5z1JcKbNIsDQFSeIZOBZJz4is6pD7UyWDggWWzTLBQbHcQFpBQdClnuQaMNUHtLHTpzCvZy33p6I7wFBvL4fnXBYH84aUIyWGTRvM2G5cfoNf4705tO2kv"
+
+            // 2. IV Hex formatında, ByteArray'e çevir
+            val ivBytes = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+            // 3. KRİTİK: JS kodunda Salt Hex değil, Utf8.parse() ile alınıyor.
+            // Bu yüzden JSON'daki salt string'inin doğrudan byte'larını alıyoruz.
+            val saltBytes = saltStr.toByteArray(Charsets.UTF_8)
+
+            // 4. PBKDF2 Yapılandırması (Birebir JS karşılığı)
+            val iterationCount = 999 // JS'deki 0x3e7
+            val keyLength = 256 // AES-256 için
+
+            // JS'de CryptoJS.algo.SHA512 kullanılmış
+            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512")
+            val spec = PBEKeySpec(secret.toCharArray(), saltBytes, iterationCount, keyLength)
+            val tmp = factory.generateSecret(spec)
+            val secretKeySpec = SecretKeySpec(tmp.encoded, "AES")
+
+            // 5. AES Şifre Çözme (Decryption)
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, IvParameterSpec(ivBytes))
+
+            val decodedCiphertext = Base64.getDecoder().decode(ciphertextB64)
+            val decryptedBytes = cipher.doFinal(decodedCiphertext)
+
+            return String(decryptedBytes, Charsets.UTF_8)
+
+        } catch (e: Exception) {
+            Log.e("DZP", "Decryption İşlemi Patladı: ${e.message}")
+            e.printStackTrace()
+            return ""
         }
-
-        val iv = hexToBytes(ivHex)
-        val salt = hexToBytes(saltHex)
-
-        // AES-256 için 32 byte'lık (256 bit) anahtar üretimi (SHA-256 ile)
-        val md = MessageDigest.getInstance("SHA-256")
-
-        /* * KDF (Key Derivation Function) Davranışı:
-         * JS dizisinde "sha256" gördüğümüz için hash kullanılıyor.
-         * Eğer sadece parolanın hash'i decrypt işlemini yapamazsa,
-         * JS tarafında salt değere ekleniyor demektir. O zaman şu satırı aç:
-         * md.update(secret.toByteArray(Charsets.UTF_8) + salt)
-         */
-        val keyBytes = md.digest(secret.toByteArray(Charsets.UTF_8))
-
-        val secretKeySpec = SecretKeySpec(keyBytes, "AES")
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, IvParameterSpec(iv))
-
-        // Android'in kendi Base64'ünü kullanıyoruz (Cloudstream için daha güvenli)
-        val decodedCiphertext = Base64.getDecoder().decode(ciphertextB64)
-        val decryptedBytes = cipher.doFinal(decodedCiphertext)
-
-        return String(decryptedBytes, Charsets.UTF_8)
     }
 
     // --- JSON Ayrıştırma Yardımcıları ---
