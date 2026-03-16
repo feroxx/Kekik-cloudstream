@@ -221,48 +221,132 @@ class DiziPal : MainAPI() {
         try {
             Log.d("DZP", "loadLinks başladı - Hedef URL: $data")
 
-            // 1. Doğrudan Bölüm Sayfasını Çek
-            val document = app.get(data, headers = getHeaders(mainUrl)).document
+            // 1. Ana sayfadan cookie'leri al (Anti-bot mekanizmaları için oturum tutmak önemli)
+            val mainPageResponse = app.get(mainUrl, headers = getHeaders(mainUrl))
+            val cookieString = mainPageResponse.headers.values("Set-Cookie")
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString("; ") { cookie -> cookie.substringBefore(";") } ?: ""
 
-            // 2. Şifreli Payload'u Taşıyan div'i Bul
-            val encryptedDivText = document.selectFirst("div[data-rm-k=true]")?.text()
-            if (encryptedDivText.isNullOrEmpty()) {
-                Log.e("DZP", "Kritik Hata: data-rm-k div'i bulunamadı. Site mimarisi değişmiş olabilir.")
+            val episodeHeaders = getHeaders(mainUrl).toMutableMap()
+            if (cookieString.isNotEmpty()) episodeHeaders["Cookie"] = cookieString
+
+            // 2. Bölüm sayfasını çek
+            val episodeDocument = app.get(data, headers = episodeHeaders).document
+
+            // 3. Şifreli wpsaData'yı bul (Artık iframe aramak yok, doğrudan data çekiyoruz)
+            val wpsaDataElement = episodeDocument.selectFirst("#wpsaData")?.attr("value")
+            if (wpsaDataElement.isNullOrEmpty()) {
+                Log.e("DZP", "Kritik Hata: #wpsaData input'u bulunamadı.")
                 return false
             }
 
-            // 3. JSON'dan Şifreli Verileri Çıkar
-            val payloadJson = JSONObject(encryptedDivText)
+            // 4. JSON'ı Parse Et
+            val payloadJson = JSONObject(wpsaDataElement)
             val ciphertext = payloadJson.getString("ciphertext")
             val ivHex = payloadJson.getString("iv")
-            // JS'de Utf8.parse() ile okunduğu için değişken adını saltStr yaptık
             val saltStr = payloadJson.getString("salt")
 
-            // 4. AES Şifresini Çöz (Secret key artık fonksiyonun kendi içinde)
-            val decryptedJsonString = decryptPayload(ciphertext, ivHex, saltStr)
+            // 5. Şifreyi Çöz -> Sonuç bize doğrudan iframe URL'sini verecek
+            // Regex ile başındaki ve sonundaki fazladan tırnakları vs. temizliyoruz.
+            val iframeUrl = decryptPayload(ciphertext, ivHex, saltStr).trim().removeSurrounding("\"")
 
-            // Decrypt işlemi hata fırlatıp boş dönerse akışı durdur
-            if (decryptedJsonString.isEmpty()) {
-                Log.e("DZP", "Şifre çözme işlemi boş döndü veya başarısız oldu.")
+            if (iframeUrl.isEmpty() || !iframeUrl.startsWith("http")) {
+                Log.e("DZP", "Şifre çözme işlemi başarısız veya beklenen URL formatında değil. Çözülen Veri: $iframeUrl")
                 return false
             }
+            Log.d("DZP", "Başarıyla Çözülen Iframe URL: $iframeUrl")
 
-            Log.d("DZP", "Başarıyla Çözülen Veri: $decryptedJsonString")
+            // 6. İFRAME SAYFASINI ÇEK
+            val iframeHeaders = mutableMapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
+                "Referer" to data,
+                "Origin" to mainUrl
+            )
+            if (cookieString.isNotEmpty()) iframeHeaders["Cookie"] = cookieString
 
-            // 5. Çözülen Veriyi Parse Et ve Oynatıcıya Gönder
-            if (decryptedJsonString.trim().startsWith("[")) {
-                val array = JSONArray(decryptedJsonString)
-                parseJsonArrayForLinks(array, callback, subtitleCallback)
-            } else {
-                val obj = JSONObject(decryptedJsonString)
-                if (obj.has("playlist")) {
-                    parsePlaylistObject(obj, callback, subtitleCallback)
-                } else {
-                    Log.e("DZP", "Bilinmeyen JSON Objesi formatı: $decryptedJsonString")
+            val iframeResponse = app.get(iframeUrl, headers = iframeHeaders)
+            val iframeHtml = iframeResponse.text
+
+            // 7. source2.php PARAMETRESİNİ BUL (openPlayer içindeki v parametresi)
+            val source2Param = Regex("""openPlayer\('([^']+)'""").find(iframeHtml)?.groupValues?.get(1)
+                ?: Regex("""source2\.php\?v=([^"']+)""").find(iframeHtml)?.groupValues?.get(1)
+                ?: return false
+
+            Log.d("DZP", "source2Param: $source2Param")
+
+            // 8. source2.php'YE İSTEK AT
+            val source2Url = "https://sn.dplayer82.site/source2.php?v=$source2Param"
+            val source2Headers = mutableMapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
+                "Referer" to iframeUrl,
+                "Origin" to "https://sn.dplayer82.site",
+                "X-Requested-With" to "XMLHttpRequest"
+            )
+            if (cookieString.isNotEmpty()) source2Headers["Cookie"] = cookieString
+
+            val source2Response = app.get(source2Url, headers = source2Headers)
+            val json = JSONObject(source2Response.text)
+
+            // 9. JSON'DAN VİDEO VE ALTYAZI LİNKLERİNİ ÇEK
+            if (json.getBoolean("state") && !json.getBoolean("expired")) {
+                val playlist = json.getJSONArray("playlist")
+
+                for (i in 0 until playlist.length()) {
+                    val item = playlist.getJSONObject(i)
+                    val sources = item.getJSONArray("sources")
+
+                    for (j in 0 until sources.length()) {
+                        val source = sources.getJSONObject(j)
+                        val videoUrl = source.getString("file")
+                        val videoTitle = source.optString("title", "Bilinmeyen")
+                        val videoType = source.getString("type")
+
+                        if (videoType == "hls") {
+                            callback.invoke(
+                                newExtractorLink(
+                                    source = "Dizipal",
+                                    name = "$videoTitle - Kaynak ${j+1}",
+                                    url = videoUrl,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    referer = "https://sn.dplayer82.site/"
+                                    quality = when {
+                                        videoTitle.contains("1080") -> Qualities.P1080.value
+                                        videoTitle.contains("720") -> Qualities.P720.value
+                                        videoTitle.contains("480") -> Qualities.P480.value
+                                        videoTitle.contains("360") -> Qualities.P360.value
+                                        else -> Qualities.Unknown.value
+                                    }}
+                            )
+                        }
+                    }
                 }
-            }
 
-            return true
+                // 10. ALTYAZILARI ÇEK
+                val subtitlesMatch = Regex("""\[(.*?)\]""").findAll(iframeHtml).lastOrNull()
+                if (subtitlesMatch != null) {
+                    Regex("""\[([^\]]+)\]([^,]+)""").findAll(subtitlesMatch.value).forEach { match ->
+                        val lang = match.groupValues[1]
+                        val url = match.groupValues[2].trim()
+
+                        subtitleCallback.invoke(
+                            SubtitleFile(
+                                lang = when (lang.lowercase()) {
+                                    "türkçe", "turkish" -> "Türkçe"
+                                    "ingilizce", "english" -> "İngilizce"
+                                    else -> lang
+                                },
+                                url = if (url.startsWith("http")) url else "https:$url"
+                            )
+                        )
+                    }
+                }
+                return true
+            }
 
         } catch (e: Exception) {
             Log.e("DZP", "loadLinks çöktü: ${e.stackTraceToString()}")
