@@ -145,14 +145,14 @@ class DiziPal : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val responseRaw = app.post(
-            "${mainUrl}/api/search-autocomplete",
+            "${mainUrl}/bg/searchcontent",
             headers     = mapOf(
                 "Accept"           to "application/json, text/javascript, */*; q=0.01",
                 "X-Requested-With" to "XMLHttpRequest"
             ),
             referer     = "${mainUrl}/",
             data        = mapOf(
-                "query" to query
+                "searchterm" to query
             )
         )
 
@@ -172,7 +172,7 @@ class DiziPal : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, interceptor = interceptor, headers = getHeaders(mainUrl)).document
 
-        val poster      = fixUrlNull(document.selectFirst("div.w-full img")?.attr("src"))
+        val poster      = document.selectFirst("div.page-top img[alt]")?.attr("src")
         val year        = document.selectXpath("//div[text()='Yıl']//following-sibling::div").text().trim().toIntOrNull()
         val description = document.selectFirst("div.summary p")?.text()?.trim()
         val tags        = document.selectXpath("//div[text()='Kategoriler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
@@ -180,10 +180,19 @@ class DiziPal : MainAPI() {
 
         if (url.contains("/series/")) {
             val title       = document.selectFirst("div.flex h2")?.text() ?: return null
-            val episodes    = document.select("div.relative div.text-white").mapNotNull{ val epName    = it.selectFirst("div.flex title")?.text()?.trim() ?: return@mapNotNull null
-                val epHref    = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-                val epEpisode = it.selectFirst("div.a text-white")?.text()?.trim()?.split(" ")?.get(2)?.replace(".", "")?.toIntOrNull()
-                val epSeason  = it.selectFirst("seasonNumber")?.text()?.trim()?.split(" ")?.get(0)?.replace(".", "")?.toIntOrNull()
+            val episodes = document.select("div.relative.w-full").mapNotNull { element ->
+                // 1. Link ve İsim Bilgisi
+                val linkElement = element.selectFirst("a[data-dizipal-pageloader]") ?: return@mapNotNull null
+                val epHref = fixUrlNull(linkElement.attr("href")) ?: return@mapNotNull null
+                val epName = linkElement.selectFirst("h2")?.text()?.trim() ?: "Bilinmeyen Bölüm"
+
+                // 2. Sezon ve Bölüm Metni (Örn: "1. Sezon 1. Bölüm")
+                val infoText = linkElement.selectFirst("div.text-white.text-sm.opacity-80")?.text()?.trim() ?: ""
+
+                // 3. Regex ile Sayıları Ayıklama (Daha güvenli yöntem)
+                // Bu pattern "1. Sezon 5. Bölüm" gibi bir metinden sayıları çeker.
+                val epSeason = Regex("""(\d+)\.\s*Sezon""").find(infoText)?.groupValues?.get(1)?.toIntOrNull()
+                val epEpisode = Regex("""(\d+)\.\s*Bölüm""").find(infoText)?.groupValues?.get(1)?.toIntOrNull()
 
                 newEpisode(epHref) {
                     this.name    = epName
