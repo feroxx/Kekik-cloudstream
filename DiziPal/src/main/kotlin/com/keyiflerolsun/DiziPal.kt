@@ -172,7 +172,7 @@ class DiziPal : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, interceptor = interceptor, headers = getHeaders(mainUrl)).document
 
-        val poster      = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
+        val poster      = fixUrlNull(document.selectFirst("div.w-full img")?.attr("src"))
         val year        = document.selectXpath("//div[text()='Yıl']//following-sibling::div").text().trim().toIntOrNull()
         val description = document.selectFirst("div.summary p")?.text()?.trim()
         val tags        = document.selectXpath("//div[text()='Kategoriler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
@@ -180,10 +180,10 @@ class DiziPal : MainAPI() {
 
         if (url.contains("/series/")) {
             val title       = document.selectFirst("div.flex h2")?.text() ?: return null
-            val episodes    = document.select("ul.episodes").mapNotNull { val epName    = it.selectFirst("div.flex title")?.text()?.trim() ?: return@mapNotNull null
+            val episodes    = document.select("div.relative div.text-white").mapNotNull{ val epName    = it.selectFirst("div.flex title")?.text()?.trim() ?: return@mapNotNull null
                 val epHref    = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-                val epEpisode = it.selectFirst("div.episode")?.text()?.trim()?.split(" ")?.get(2)?.replace(".", "")?.toIntOrNull()
-                val epSeason  = it.selectFirst("div.episode")?.text()?.trim()?.split(" ")?.get(0)?.replace(".", "")?.toIntOrNull()
+                val epEpisode = it.selectFirst("div.a text-white")?.text()?.trim()?.split(" ")?.get(2)?.replace(".", "")?.toIntOrNull()
+                val epSeason  = it.selectFirst("seasonNumber")?.text()?.trim()?.split(" ")?.get(0)?.replace(".", "")?.toIntOrNull()
 
                 newEpisode(epHref) {
                     this.name    = epName
