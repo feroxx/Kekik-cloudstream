@@ -180,11 +180,12 @@ class DiziPal : MainAPI() {
 
         if (url.contains("/series/")) {
             val title       = document.selectFirst("div.flex h2")?.text() ?: return null
-            val episodes = document.select("div.relative.w-full").mapNotNull { element ->
+            val episodeElements = document.select("div.relative.w-full.flex.items-start.gap-4")
+            val episodes = episodeElements.mapNotNull { element ->
                 // 1. Link ve İsim Bilgisi
                 val linkElement = element.selectFirst("a[data-dizipal-pageloader]") ?: return@mapNotNull null
                 val epHref = fixUrlNull(linkElement.attr("href")) ?: return@mapNotNull null
-                val epName = linkElement.selectFirst("h2")?.text()?.trim() ?: "Bilinmeyen Bölüm"
+                val epName = linkElement.selectFirst("h2")?.text()?.trim() ?: "Bölüm"
 
                 // 2. Sezon ve Bölüm Metni (Örn: "1. Sezon 1. Bölüm")
                 val infoText = linkElement.selectFirst("div.text-white.text-sm.opacity-80")?.text()?.trim() ?: ""
