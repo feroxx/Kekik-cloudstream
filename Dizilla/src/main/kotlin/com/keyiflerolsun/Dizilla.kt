@@ -413,20 +413,20 @@ class Dizilla : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // 1. Sayfa içeriğini çekiyoruz
+        // 1. Sayfa kaynağını çek
         val response = app.get(data, interceptor = interceptor)
         val document = response.document
 
-        // 2. Next.js verisini içeren script tag'ini buluyoruz
-        val scriptElement = document.selectFirst("script#__NEXT_DATA__")
-        val scriptData = scriptElement?.data() ?: return false
+        // 2. __NEXT_DATA__ içeriğini al
+        val scriptTag = document.selectFirst("script#__NEXT_DATA__")?.data() ?: return false
 
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
         return try {
-            // 3. JSON'ı parse et ve secureData stringine ulaş
-            val rootNode = objectMapper.readTree(scriptData)
+            val rootNode = objectMapper.readTree(scriptTag)
+
+            // Şifreli veri bloğunu bul (Senin gönderdiğin http_raw.txt içinde bu yapıda)
             val secureData = rootNode.path("props")
                 .path("pageProps")
                 .path("secureData")
@@ -434,39 +434,37 @@ class Dizilla : MainAPI() {
 
             if (secureData.isEmpty()) return false
 
-            // 4. Veriyi çöz (decrypt)
-            val decodedData = decryptDizillaResponse(secureData)
-            val decodedJson = objectMapper.readTree(decodedData)
+            // 3. Şifreyi çöz (Bu fonksiyonun sende tanımlı olduğunu varsayıyoruz)
+            val decryptedJsonString = decryptDizillaResponse(secureData)
+            val decryptedNode = objectMapper.readTree(decryptedJsonString)
 
-            // 5. Kaynakları içeren diziye erişim (JS dosyasındaki hiyerarşi)
-            val sourcesArray = decodedJson.path("RelatedResults")
+            // 4. JS dosyasındaki hiyerarşiyi takip et: RelatedResults -> getEpisodeSources -> result
+            val sources = decryptedNode.path("RelatedResults")
                 .path("getEpisodeSources")
                 .path("result")
 
-            if (!sourcesArray.isArray || sourcesArray.isEmpty) return false
+            if (!sources.isArray || sources.isEmpty) return false
 
-            var linkFound = false
+            var found = false
+            sources.forEach { node ->
+                // source_content içinde iframe HTML'i var
+                val rawHtml = node.path("source_content").asText()
 
-            // 6. Tüm kaynakları dön ve iframe içerenleri işle
-            sourcesArray.forEach { sourceNode ->
-                val sourceContent = sourceNode.path("source_content").asText()
+                if (rawHtml.contains("iframe")) {
+                    // Jsoup ile HTML içinden src'yi çek
+                    val iframeUrl = Jsoup.parse(rawHtml).select("iframe").attr("src")
+                    val cleanUrl = fixUrlNull(iframeUrl)
 
-                // source_content içinde genelde <iframe src="..."> bulunur
-                if (sourceContent.contains("iframe")) {
-                    val iframeUrl = Jsoup.parse(sourceContent).select("iframe").attr("src")
-                    val finalUrl = fixUrlNull(iframeUrl)
-
-                    if (!finalUrl.isNullOrEmpty()) {
-                        // hotlinger veya diğer extractorları yükle
-                        loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
-                        linkFound = true
+                    if (!cleanUrl.isNullOrEmpty()) {
+                        // Yakalanan link: https://sn.hotlinger.com/iframe.php?v=...
+                        loadExtractor(cleanUrl, "$mainUrl/", subtitleCallback, callback)
+                        found = true
                     }
                 }
             }
-
-            linkFound
+            found
         } catch (e: Exception) {
-            // Loglama yaparak hatayı takip etmelisin
+            // Log: "Dizilla link yükleme hatası"
             false
         }
     }
