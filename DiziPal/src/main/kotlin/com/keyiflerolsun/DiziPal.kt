@@ -178,7 +178,7 @@ class DiziPal : MainAPI() {
         val tags        = document.selectXpath("//div[text()='Kategoriler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
         val duration    = Regex("(\\d+)").find(document.selectXpath("//div[text()='Süre']//following-sibling::div").text())?.value?.toIntOrNull()
 
-        if (url.contains("/dizi/")) {
+        if (url.contains("/series/")) {
             val title       = document.selectFirst("div.flex h2")?.text() ?: return null
             val episodes    = document.select("ul.episodes").mapNotNull { val epName    = it.selectFirst("div.flex title")?.text()?.trim() ?: return@mapNotNull null
                 val epHref    = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
@@ -219,22 +219,33 @@ class DiziPal : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        android.util.Log.d("DiziPal", "--> loadLinks ÇAĞRILDI. Gelen URL: $data")
         val doc = app.get(data).document
         
-        // Şifreli div'i bul (Jsoup'un .text() metodu &quot; temizliğini kendi yapar)
+        // Şifreli div'i bul
         val encryptedText = doc.selectFirst("div[data-rm-k=true]")?.text() ?: ""
+        android.util.Log.d("DiziPal", "--> Şifreli metin uzunluğu: ${encryptedText.length}")
         
         var iframeUrl = if (encryptedText.isNotEmpty()) {
+            android.util.Log.d("DiziPal", "--> Şifreli veri bulundu, decrypt işlemine geçiliyor...")
             decryptDizipalData(encryptedText)
         } else {
+            android.util.Log.w("DiziPal", "--> DİKKAT: Şifreli veri DOM'da YOK! Fallback iframe aranıyor...")
             doc.selectFirst("iframe")?.attr("src") ?: ""
         }
+
+        android.util.Log.d("DiziPal", "--> Elde edilen Ham Iframe URL: $iframeUrl")
 
         if (iframeUrl.isNotEmpty()) {
             if (iframeUrl.startsWith("//")) {
                 iframeUrl = "https:$iframeUrl"
             }
+            android.util.Log.d("DiziPal", "--> Extractor'a gönderilen Final URL: $iframeUrl")
+            
+            // Extractor'ı tetikle
             loadExtractor(iframeUrl, data, subtitleCallback, callback)
+        } else {
+            android.util.Log.e("DiziPal", "--> HATA: iframeUrl tamamen BOŞ. Video linki bulunamadı!")
         }
         return true
     }
@@ -249,9 +260,16 @@ class DiziPal : MainAPI() {
         return try {
             val passphrase = "3hPn4uCjTVtfYWcjIcoJQ4cL1WWk1qxXI39egLYOmNv6IblA7eKJz68uU3eLzux1biZLCms0quEjTYniGv5z1JcKbNIsDQFSeIZOBZJz4is6pD7UyWDggWWzTLBQbHcQFpBQdClnuQaMNUHtLHTpzCvZy33p6I7wFBvL4fnXBYH84aUIyWGTRvM2G5cfoNf4705tO2kv"
 
-            val ctMatch = """"ciphertext"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) ?: return ""
-            val ivMatch = """"iv"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) ?: return ""
-            val saltMatch = """"salt"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) ?: return ""
+            val ctMatch = """"ciphertext"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) 
+                ?: return "".also { android.util.Log.e("DiziPal", "--> HATA: Regex 'ciphertext' değerini bulamadı!") }
+                
+            val ivMatch = """"iv"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) 
+                ?: return "".also { android.util.Log.e("DiziPal", "--> HATA: Regex 'iv' değerini bulamadı!") }
+                
+            val saltMatch = """"salt"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) 
+                ?: return "".also { android.util.Log.e("DiziPal", "--> HATA: Regex 'salt' değerini bulamadı!") }
+
+            android.util.Log.d("DiziPal", "--> Regex başarılı. Key türetiliyor...")
 
             val salt = saltMatch.decodeHex()
             val iv = ivMatch.decodeHex()
@@ -268,6 +286,8 @@ class DiziPal : MainAPI() {
             val decryptedBytes = cipher.doFinal(ciphertext)
             var finalUrl = String(decryptedBytes, kotlin.text.Charsets.UTF_8).replace("\\/", "/")
 
+            android.util.Log.d("DiziPal", "--> AES Çözümleme Başarılı. İlk Çıktı: $finalUrl")
+
             if (finalUrl.startsWith("://")) {
                 finalUrl = "https$finalUrl"
             } else if (finalUrl.startsWith("//")) {
@@ -278,12 +298,12 @@ class DiziPal : MainAPI() {
 
             finalUrl
         } catch (e: Exception) {
+            android.util.Log.e("DiziPal", "--> HATA: Decryption sırasında Exception fırlatıldı! Mesaj: ${e.message}")
             e.printStackTrace()
             ""
         }
     }
 
-    // Header'ları oluşturan yardımcı fonksiyon - Map<String, String> döndürür
     private fun getHeaders(baseUrl: String): Map<String, String> {
         return mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
