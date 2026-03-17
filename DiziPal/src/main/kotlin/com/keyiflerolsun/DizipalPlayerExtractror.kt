@@ -9,9 +9,9 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 // DiziPal sınıfının dışına (altına) ekle
-class DizipalPlayerExtractor : ExtractorApi() {
-    override var name = "DPlayer"
-    override var mainUrl = "dplayer82.site"
+class DizipalPlayer : ExtractorApi() {
+    override var name = "DizipalPlayer"
+    override var mainUrl = "https://four.dplayer82.site"
     override val requiresReferer = true
 
     override suspend fun getUrl(
