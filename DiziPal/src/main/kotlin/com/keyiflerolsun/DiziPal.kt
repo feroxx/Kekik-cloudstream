@@ -212,239 +212,74 @@ class DiziPal : MainAPI() {
         }
     }
 
+    // 2. LOAD LINKS: Asıl şifre çözme ve Iframe yakalama işleminin yapıldığı yer
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        try {
-            Log.d("DZP", "loadLinks başladı - Hedef URL: $data")
-
-            // 1. Ana sayfadan cookie'leri al (Anti-bot mekanizmaları için oturum tutmak önemli)
-            val mainPageResponse = app.get(mainUrl, headers = getHeaders(mainUrl))
-            val cookieString = mainPageResponse.headers.values("Set-Cookie")
-                .takeIf { it.isNotEmpty() }
-                ?.joinToString("; ") { cookie -> cookie.substringBefore(";") } ?: ""
-
-            val episodeHeaders = getHeaders(mainUrl).toMutableMap()
-            if (cookieString.isNotEmpty()) episodeHeaders["Cookie"] = cookieString
-
-            // 2. Bölüm sayfasını çek
-            val episodeDocument = app.get(data, headers = episodeHeaders).document
-
-            // 3. Şifreli wpsaData'yı bul (Artık iframe aramak yok, doğrudan data çekiyoruz)
-            val wpsaDataElement = episodeDocument.selectFirst("#wpsaData")?.attr("value")
-            if (wpsaDataElement.isNullOrEmpty()) {
-                Log.e("DZP", "Kritik Hata: #wpsaData input'u bulunamadı.")
-                return false
-            }
-
-            // 4. JSON'ı Parse Et
-            val payloadJson = JSONObject(wpsaDataElement)
-            val ciphertext = payloadJson.getString("ciphertext")
-            val ivHex = payloadJson.getString("iv")
-            val saltStr = payloadJson.getString("salt")
-
-            // 5. Şifreyi Çöz -> Sonuç bize doğrudan iframe URL'sini verecek
-            // Regex ile başındaki ve sonundaki fazladan tırnakları vs. temizliyoruz.
-            val iframeUrl = decryptPayload(ciphertext, ivHex, saltStr).trim().removeSurrounding("\"")
-
-            if (iframeUrl.isEmpty() || !iframeUrl.startsWith("http")) {
-                Log.e("DZP", "Şifre çözme işlemi başarısız veya beklenen URL formatında değil. Çözülen Veri: $iframeUrl")
-                return false
-            }
-            Log.d("DZP", "Başarıyla Çözülen Iframe URL: $iframeUrl")
-
-            // 6. İFRAME SAYFASINI ÇEK
-            val iframeHeaders = mutableMapOf(
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
-                "Referer" to data,
-                "Origin" to mainUrl
-            )
-            if (cookieString.isNotEmpty()) iframeHeaders["Cookie"] = cookieString
-
-            val iframeResponse = app.get(iframeUrl, headers = iframeHeaders)
-            val iframeHtml = iframeResponse.text
-
-            // 7. source2.php PARAMETRESİNİ BUL (openPlayer içindeki v parametresi)
-            val source2Param = Regex("""openPlayer\('([^']+)'""").find(iframeHtml)?.groupValues?.get(1)
-                ?: Regex("""source2\.php\?v=([^"']+)""").find(iframeHtml)?.groupValues?.get(1)
-                ?: return false
-
-            Log.d("DZP", "source2Param: $source2Param")
-
-            // 8. source2.php'YE İSTEK AT
-            val source2Url = "https://sn.dplayer82.site/source2.php?v=$source2Param"
-            val source2Headers = mutableMapOf(
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept" to "application/json, text/javascript, */*; q=0.01",
-                "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
-                "Referer" to iframeUrl,
-                "Origin" to "https://sn.dplayer82.site",
-                "X-Requested-With" to "XMLHttpRequest"
-            )
-            if (cookieString.isNotEmpty()) source2Headers["Cookie"] = cookieString
-
-            val source2Response = app.get(source2Url, headers = source2Headers)
-            val json = JSONObject(source2Response.text)
-
-            // 9. JSON'DAN VİDEO VE ALTYAZI LİNKLERİNİ ÇEK
-            if (json.getBoolean("state") && !json.getBoolean("expired")) {
-                val playlist = json.getJSONArray("playlist")
-
-                for (i in 0 until playlist.length()) {
-                    val item = playlist.getJSONObject(i)
-                    val sources = item.getJSONArray("sources")
-
-                    for (j in 0 until sources.length()) {
-                        val source = sources.getJSONObject(j)
-                        val videoUrl = source.getString("file")
-                        val videoTitle = source.optString("title", "Bilinmeyen")
-                        val videoType = source.getString("type")
-
-                        if (videoType == "hls") {
-                            callback.invoke(
-                                newExtractorLink(
-                                    source = "Dizipal",
-                                    name = "$videoTitle - Kaynak ${j+1}",
-                                    url = videoUrl,
-                                    type = ExtractorLinkType.M3U8
-                                ) {
-                                    referer = "https://sn.dplayer82.site/"
-                                    quality = when {
-                                        videoTitle.contains("1080") -> Qualities.P1080.value
-                                        videoTitle.contains("720") -> Qualities.P720.value
-                                        videoTitle.contains("480") -> Qualities.P480.value
-                                        videoTitle.contains("360") -> Qualities.P360.value
-                                        else -> Qualities.Unknown.value
-                                    }}
-                            )
-                        }
-                    }
-                }
-
-                // 10. ALTYAZILARI ÇEK
-                val subtitlesMatch = Regex("""\[(.*?)\]""").findAll(iframeHtml).lastOrNull()
-                if (subtitlesMatch != null) {
-                    Regex("""\[([^\]]+)\]([^,]+)""").findAll(subtitlesMatch.value).forEach { match ->
-                        val lang = match.groupValues[1]
-                        val url = match.groupValues[2].trim()
-
-                        subtitleCallback.invoke(
-                            SubtitleFile(
-                                lang = when (lang.lowercase()) {
-                                    "türkçe", "turkish" -> "Türkçe"
-                                    "ingilizce", "english" -> "İngilizce"
-                                    else -> lang
-                                },
-                                url = if (url.startsWith("http")) url else "https:$url"
-                            )
-                        )
-                    }
-                }
-                return true
-            }
-
-        } catch (e: Exception) {
-            Log.e("DZP", "loadLinks çöktü: ${e.stackTraceToString()}")
+        val doc = app.get(data).document
+        
+        // Şifreli div'i bul (Jsoup'un .text() metodu &quot; temizliğini kendi yapar)
+        val encryptedText = doc.selectFirst("div[data-rm-k=true]")?.text() ?: ""
+        
+        var iframeUrl = if (encryptedText.isNotEmpty()) {
+            decryptDizipalData(encryptedText)
+        } else {
+            doc.selectFirst("iframe")?.attr("src") ?: ""
         }
 
-        return false
+        if (iframeUrl.isNotEmpty()) {
+            if (iframeUrl.startsWith("//")) {
+                iframeUrl = "https:$iframeUrl"
+            }
+            loadExtractor(iframeUrl, data, subtitleCallback, callback)
+        }
+        return true
     }
 
-    /**
-     * Senior Dokunuşu: Kriptografi Katmanı
-     */
-    private fun decryptPayload(ciphertextB64: String, ivHex: String, saltStr: String): String {
-        try {
-            // 1. Yeni Devasa Parola
-            val secret = "3hPn4uCjTVtfYWcjIcoJQ4cL1WWk1qxXI39egLYOmNv6IblA7eKJz68uU3eLzux1biZLCms0quEjTYniGv5z1JcKbNIsDQFSeIZOBZJz4is6pD7UyWDggWWzTLBQbHcQFpBQdClnuQaMNUHtLHTpzCvZy33p6I7wFBvL4fnXBYH84aUIyWGTRvM2G5cfoNf4705tO2kv"
+    // 3. DECRYPT VE YARDIMCI FONKSİYON: Şifreyi çözen business logic
+    private fun String.decodeHex(): ByteArray {
+        check(length % 2 == 0) { "Hex string çift uzunlukta olmalıdır" }
+        return chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
 
-            // 2. IV Hex formatında, ByteArray'e çevir
-            val ivBytes = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    private fun decryptDizipalData(rawJsonText: String): String {
+        return try {
+            val passphrase = "3hPn4uCjTVtfYWcjIcoJQ4cL1WWk1qxXI39egLYOmNv6IblA7eKJz68uU3eLzux1biZLCms0quEjTYniGv5z1JcKbNIsDQFSeIZOBZJz4is6pD7UyWDggWWzTLBQbHcQFpBQdClnuQaMNUHtLHTpzCvZy33p6I7wFBvL4fnXBYH84aUIyWGTRvM2G5cfoNf4705tO2kv"
 
-            // 3. KRİTİK: JS kodunda Salt Hex değil, Utf8.parse() ile alınıyor.
-            // Bu yüzden JSON'daki salt string'inin doğrudan byte'larını alıyoruz.
-            val saltBytes = saltStr.toByteArray(Charsets.UTF_8)
+            val ctMatch = """"ciphertext"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) ?: return ""
+            val ivMatch = """"iv"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) ?: return ""
+            val saltMatch = """"salt"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) ?: return ""
 
-            // 4. PBKDF2 Yapılandırması (Birebir JS karşılığı)
-            val iterationCount = 999 // JS'deki 0x3e7
-            val keyLength = 256 // AES-256 için
+            val salt = saltMatch.decodeHex()
+            val iv = ivMatch.decodeHex()
+            val ciphertext = android.util.Base64.decode(ctMatch, android.util.Base64.DEFAULT)
 
-            // JS'de CryptoJS.algo.SHA512 kullanılmış
-            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512")
-            val spec = PBEKeySpec(secret.toCharArray(), saltBytes, iterationCount, keyLength)
-            val tmp = factory.generateSecret(spec)
-            val secretKeySpec = SecretKeySpec(tmp.encoded, "AES")
+            val factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512")
+            val spec = javax.crypto.spec.PBEKeySpec(passphrase.toCharArray(), salt, 999, 256)
+            val secretKey = factory.generateSecret(spec)
+            val secret = javax.crypto.spec.SecretKeySpec(secretKey.encoded, "AES")
 
-            // 5. AES Şifre Çözme (Decryption)
-            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, IvParameterSpec(ivBytes))
+            val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, secret, javax.crypto.spec.IvParameterSpec(iv))
 
-            val decodedCiphertext = Base64.getDecoder().decode(ciphertextB64)
-            val decryptedBytes = cipher.doFinal(decodedCiphertext)
+            val decryptedBytes = cipher.doFinal(ciphertext)
+            var finalUrl = String(decryptedBytes, kotlin.text.Charsets.UTF_8).replace("\\/", "/")
 
-            return String(decryptedBytes, Charsets.UTF_8)
+            if (finalUrl.startsWith("://")) {
+                finalUrl = "https$finalUrl"
+            } else if (finalUrl.startsWith("//")) {
+                finalUrl = "https:$finalUrl"
+            } else if (!finalUrl.startsWith("http")) {
+                finalUrl = "https://$finalUrl"
+            }
 
+            finalUrl
         } catch (e: Exception) {
-            Log.e("DZP", "Decryption İşlemi Patladı: ${e.message}")
             e.printStackTrace()
-            return ""
-        }
-    }
-
-    // --- JSON Ayrıştırma Yardımcıları ---
-
-    private suspend fun parsePlaylistObject(obj: JSONObject, callback: (ExtractorLink) -> Unit, subtitleCallback: (SubtitleFile) -> Unit) {
-        val playlist = obj.getJSONArray("playlist")
-        for (i in 0 until playlist.length()) {
-            val item = playlist.getJSONObject(i)
-            val sources = item.optJSONArray("sources") ?: continue
-
-            for (j in 0 until sources.length()) {
-                val source = sources.getJSONObject(j)
-                val videoUrl = source.getString("file")
-                val videoTitle = source.optString("title", "Bilinmeyen Kalite")
-
-                callback.invoke(
-                    newExtractorLink(
-                        source = "Dizipal (Decrypted)",
-                        name = videoTitle,
-                        url = videoUrl,
-                        type = if (videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                    referer = mainUrl
-                    quality = Qualities.Unknown.value
-                        }
-                )
-            }
-        }
-        // Eğer altyazı objesi (tracks vb.) varsa burada subtitleCallback ile yakalanabilir.
-    }
-
-    private suspend fun parseJsonArrayForLinks(array: JSONArray, callback: (ExtractorLink) -> Unit, subtitleCallback: (SubtitleFile) -> Unit) {
-        for (i in 0 until array.length()) {
-            val source = array.getJSONObject(i)
-            val fileUrl = source.optString("file")
-            val label = source.optString("label", "Otomatik")
-
-            if (fileUrl.isNotEmpty()) {
-                callback.invoke(
-                    newExtractorLink(
-                        source = "Dizipal (Decrypted)",
-                        name = label,
-                        url = fileUrl,
-                        type = if (fileUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    )
-                    {
-                        referer = mainUrl
-                        quality = Qualities.Unknown.value
-                    }
-                )
-            }
+            ""
         }
     }
 
