@@ -448,7 +448,7 @@ class Dizilla : MainAPI() {
             println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
 
             val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - CBC - Success: ${result.take(10000)}")
+            println("Dizilla DEBUG - CBC - Success: ${result.take(100000)}")
 
             return result
         } catch (e: Exception) {
