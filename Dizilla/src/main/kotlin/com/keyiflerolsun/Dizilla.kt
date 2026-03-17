@@ -239,9 +239,9 @@ class Dizilla : MainAPI() {
                         ?: return@mapNotNull null
 
                     val poster = item.get("poster_url")?.asText() ?:
-                    item.get("poster")?.asText() ?:
+                    item.get("square_url")?.asText() ?:
                     item.get("face_url")?.asText() ?:
-                    item.get("image")?.asText()
+                    item.get("back_url")?.asText()
 
                     newTvSeriesSearchResponse(title, fixUrl("/dizi/$slug"), TvType.TvSeries) {
                         this.posterUrl = fixUrlNull(poster)
