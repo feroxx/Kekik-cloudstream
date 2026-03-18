@@ -236,12 +236,10 @@ class Dizilla : MainAPI() {
                     item.get("face_url")?.asText() ?:
                     item.get("back_url")?.asText()
 
-                    val usedslug = item.path("listItems").forEach { node ->
-                        val slug = node.path("used_slug").asText()
-                        println("Slug: $slug")
-                    }
-
-                    newTvSeriesSearchResponse(title, fixUrl("$usedslug"), TvType.TvSeries) {
+                    // itemString: JSON'ın tamamını içeren ham metin (String)
+// item değişkenini (JsonNode) String'e çevirip Regex'e sokuyoruz
+                    val slug = Regex("""\"serie_site_id\":0,.*?\"used_slug\":\"(.*?)\"""").find(item.toString())?.groupValues?.get(1) ?: ""
+                    newTvSeriesSearchResponse(title, fixUrl(slug), TvType.TvSeries) {
                         this.posterUrl = fixUrlNull(poster)
                     }
                 }
