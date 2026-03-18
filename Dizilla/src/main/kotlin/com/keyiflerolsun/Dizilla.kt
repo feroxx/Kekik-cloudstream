@@ -498,30 +498,22 @@ class Dizilla : MainAPI() {
 
     private fun decryptDizillaResponse(response: String): String? {
         try {
-            val algorithm = "AES/CBC/PKCS5Padding"
+            val fullData = Base64.decode(response, Base64.DEFAULT)
+
+            // Veriyi BÖLMÜYORUZ, tamamı şifreli veri
+            val encryptedData = fullData
+
+            // IV büyük ihtimalle AES Key ile aynıdır. Eğer hata verirse
+            // IvParameterSpec(ByteArray(16)) yazarak sıfır IV deneyebilirsin.
+            val ivSpec = IvParameterSpec(privateAESKey.toByteArray(Charsets.UTF_8))
             val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
 
-            val fullData = Base64.decode(response, Base64.DEFAULT)
-            println("Dizilla DEBUG - CBC - Full data size: ${fullData.size}")
-
-            val iv = fullData.sliceArray(0 until 16)
-            val encryptedData = fullData.sliceArray(16 until fullData.size)
-
-            println("Dizilla DEBUG - CBC - IV size: ${iv.size}, Encrypted size: ${encryptedData.size}")
-
-            val ivSpec = IvParameterSpec(iv)
-            val cipher = Cipher.getInstance(algorithm)
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
 
             val decryptedBytes = cipher.doFinal(encryptedData)
-            println("Dizilla DEBUG - CBC - Decrypted bytes size: ${decryptedBytes.size}")
-
-            val result = String(decryptedBytes, Charsets.UTF_8)
-            println("Dizilla DEBUG - CBC - Success: ${result.take(100000)}")
-
-            return result
+            return String(decryptedBytes, Charsets.UTF_8)
         } catch (e: Exception) {
-            println("Dizilla DEBUG - Decryption failed: ${e.message}")
             e.printStackTrace()
             return null
         }
