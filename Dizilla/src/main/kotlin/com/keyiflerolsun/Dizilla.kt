@@ -407,81 +407,76 @@ class Dizilla : MainAPI() {
         }
     }
 
-override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-): Boolean {
-    val document = app.get(data, interceptor = interceptor).document
-    val script = document.selectFirst("script#__NEXT_DATA__")?.data() ?: return false
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val document = app.get(data, interceptor = interceptor).document
+        val script = document.selectFirst("script#__NEXT_DATA__")?.data() ?: return false
 
-    val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-    return try {
-        val rootNode = objectMapper.readTree(script)
-        
-        // __NEXT_DATA__ içindeki şifreli veriyi alıyoruz
-        val secureData = rootNode.path("props").path("pageProps").path("secureData").asText()
+        return try {
+            val rootNode = objectMapper.readTree(script)
 
-        if (secureData.isEmpty()) {
-            Log.e("DizillaDebug", "HATA: secureData bulunamadı. Sitenin root yapısı değişmiş olabilir.")
-            return false
-        }
+            val secureData = rootNode.path("props").path("pageProps").path("secureData").asText()
 
-        // 1. Şifreyi Çöz
-        val decodedData = decryptDizillaResponse(secureData)
-        
-        // Güvenlik kontrolü: Decrypt işlemi başarısız olduysa veya boş döndüyse
-        if (decodedData.isEmpty() || !decodedData.trim().startsWith("{")) {
-            Log.e("DizillaDebug", "HATA: Decryption başarısız! Dönen string: ${decodedData.take(100)}...")
-            return false
-        }
+            if (secureData.isEmpty()) {
+                Log.e("DizillaDebug", "HATA: secureData bulunamadı")
+                return false
+            }
 
-        val decodedJson = objectMapper.readTree(decodedData)
+            // 1. Şifreyi çöz
+            val decodedData = decryptDizillaResponse(secureData)
+            val decodedJson = objectMapper.readTree(decodedData)
 
-        // 2. SENIOR YAKLAŞIMI: Yola (path) bağımlı kalma!
-        // Tüm JSON ağacını tarayıp "source_content" adlı bütün key'lerin valuelarını getirir.
-        val sourceContents = decodedJson.findValuesAsText("source_content")
+            // 2. Senin bulduğun kesin yol: RelatedResults -> getEpisodeSources -> result
+            val sources = decodedJson.path("RelatedResults")
+                .path("getEpisodeSources")
+                .path("result")
 
-        if (sourceContents.isEmpty()) {
-            // Eğer buraya düşüyorsa şifre çözülmüştür ama içinde "source_content" adında bir alan yoktur.
-            // Bu log sayesinde decrypted verinin aslında neye benzediğini görebileceğiz.
-            Log.e("DizillaDebug", "HATA: JSON içinde 'source_content' bulunamadı! Çözülen JSON: ${decodedData.take(500)}...")
-            return false
-        }
+            if (!sources.isArray || sources.isEmpty) {
+                Log.e("DizillaDebug", "HATA: Kaynak dizisi boş veya ulaşılamadı!")
+                return false
+            }
 
-        var linkFound = false
+            var count = 0
 
-        // 3. Bulunan tüm source_content'leri tara
-        sourceContents.forEach { rawHtml ->
-            if (rawHtml.contains("iframe")) {
-                // Iframe HTML'ini Jsoup ile parse edip src özniteliğini alıyoruz
-                val iframeUrl = Jsoup.parse(rawHtml).select("iframe").attr("src")
-                val finalUrl = fixUrlNull(iframeUrl)
+            // 3. Kaynakları tara
+            sources.forEach { node ->
+                val sourceContent = node.path("source_content").asText()
 
-                if (!finalUrl.isNullOrEmpty()) {
-                    Log.d("DizillaDebug", "BAŞARILI: Iframe URL Yakalandı -> $finalUrl")
-                    loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
-                    linkFound = true
+                if (sourceContent.contains("iframe", ignoreCase = true)) {
+                    // Jsoup ile raw HTML içinden linki çekiyoruz
+                    var iframeUrl = Jsoup.parse(sourceContent).select("iframe").attr("src")
+
+                    // CRITICAL FIX: Protokol bağımsız URL'leri düzeltiyoruz
+                    if (iframeUrl.startsWith("//")) {
+                        iframeUrl = "https:$iframeUrl"
+                    }
+
+                    val finalUrl = fixUrlNull(iframeUrl)
+
+                    if (!finalUrl.isNullOrEmpty()) {
+                        Log.d("DizillaDebug", "BAŞARILI! Yakalanan ve Düzeltilen Link: $finalUrl")
+
+                        // Extractor'a gönder
+                        loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
+                        count++
+                    }
                 }
             }
+
+            count > 0
+        } catch (e: Exception) {
+            Log.e("DizillaDebug", "Hata Oluştu: ${e.message}")
+            e.printStackTrace()
+            false
         }
-
-        if (!linkFound) {
-            Log.w("DizillaDebug", "UYARI: 'source_content' bulundu ama içinden geçerli bir iframe src'si çıkmadı.")
-        }
-
-        linkFound
-
-    } catch (e: Exception) {
-        Log.e("DizillaDebug", "KRİTİK HATA: ${e.message}")
-        e.printStackTrace()
-        false
     }
-}
-
 
     private fun decryptDizillaResponse(response: String): String? {
         try {
