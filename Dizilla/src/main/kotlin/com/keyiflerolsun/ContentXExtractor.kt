@@ -19,7 +19,7 @@ open class ContentX : ExtractorApi() {
     subtitleCallback: (SubtitleFile) -> Unit,
     callback: (ExtractorLink) -> Unit
 ) {
-    val extRef = referer ?: ""
+    val extRef = referer ?: "https://dizilla.to"
     Log.d("Kekik_${this.name}", "url » $url")
 
     val iSource = app.get(url, referer = extRef).text
