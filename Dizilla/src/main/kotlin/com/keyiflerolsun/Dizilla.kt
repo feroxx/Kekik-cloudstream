@@ -333,14 +333,20 @@ class Dizilla : MainAPI() {
         val encryptedBlob = searchResult.response
             ?: throw ErrorLoadingException("API response field is null")
 
-        var decryptedJson = decryptDizillaResponse(encryptedBlob) ?: return emptyList()
+        val decryptedJson = decryptDizillaResponse(encryptedBlob)
+            ?: throw ErrorLoadingException("Decryption failed")
 
-// Bazen başta garip karakterler kalabilir, temizleyelim
-        decryptedJson = decryptedJson.substringAfter("{")
-        decryptedJson = "{m" + decryptedJson
+// DEBUG: Gelen ham string'i kontrol et
+        println("DEBUG RAW: $decryptedJson")
 
-        // 4. Decrypt edilmiş JSON metnini asıl veri modeline map'le
-        val contentJson: SearchData = objectMapper.readValue(decryptedJson)
+// EĞER string başında { yoksa ve essage ile başlıyorsa tamir et
+        val fixedJson = if (!decryptedJson.startsWith("{") && decryptedJson.contains("\"essage\"")) {
+            "{m\"" + decryptedJson
+        } else {
+            decryptedJson
+        }
+
+        val contentJson: SearchData = objectMapper.readValue(fixedJson)
         print("Dizilla DEBUG - decryptedJson $decryptedJson")
         if (contentJson.state != true) {
             return emptyList() // State false ise boş liste dönmek daha güvenlidir
