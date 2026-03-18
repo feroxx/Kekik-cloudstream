@@ -429,54 +429,41 @@ class Dizilla : MainAPI() {
             }
 
             val decodedData = decryptDizillaResponse(secureData)
+
+            // TEŞHİS LOGU 1: Decrypt edilmiş ham verinin ilk kısmını görelim
+            // Belki JSON yapısı beklediğimizden farklı sarmalanmıştır.
+            Log.d("DizillaDebug", "HAM DECODED VERİ (İlk 1000 Karakter): ${decodedData?.take(1000000)}")
+
             if (decodedData?.isEmpty() == true || !decodedData?.trim()?.startsWith("{")!!) {
+                Log.e("DizillaDebug", "HATA: Decoded veri geçerli bir JSON objesi ile başlamıyor!")
                 return false
             }
 
             val decodedJson = objectMapper.readTree(decodedData)
-
-            // Hiyerarşiden bağımsız olarak tüm source_content değerlerini çekiyoruz
             val sourceContents = decodedJson.findValuesAsText("source_content")
 
             if (sourceContents.isEmpty()) {
-                Log.e("DizillaDebug", "HATA: source_content bulunamadı!")
+                Log.e("DizillaDebug", "HATA: source_content bulunamadı! Belki adı değişti.")
                 return false
             }
 
-            var linkFound = false
+            // TEŞHİS LOGU 2: Tüm source_content'leri raw olarak yazdırıyoruz
+            sourceContents.forEachIndexed { index, rawHtml ->
+                Log.d("DizillaDebug", "RAW SOURCE_CONTENT [$index]: $rawHtml")
 
-            // Src değerini yakalayacak Regex (Çift veya tek tırnak fark etmeksizin içindekini alır)
-            val srcRegex = Regex("""src\s*=\s*["']([^"']+)["']""")
+                // Regex'in neden bulamadığını test etmek için anlık deneme:
+                val srcRegex = Regex("""src\s*=\s*\\?["']([^"'\\]+)\\?["']""")
+                val match = srcRegex.find(rawHtml)
 
-            sourceContents.forEach { rawHtml ->
-                if (rawHtml.contains("iframe", ignoreCase = true)) {
-
-                    // Jsoup yerine Regex ile arama yapıyoruz
-                    val matchResult = srcRegex.find(rawHtml)
-
-                    if (matchResult != null) {
-                        // Regex'teki 1. grup, tırnak içindeki URL'yi verir
-                        var iframeUrl = matchResult.groupValues[1]
-
-                        // Protokol bağımsız URL düzeltmesi
-                        if (iframeUrl.startsWith("//")) {
-                            iframeUrl = "https:$iframeUrl"
-                        }
-
-                        val finalUrl = fixUrlNull(iframeUrl)
-
-                        if (!finalUrl.isNullOrEmpty()) {
-                            Log.d("DizillaDebug", "BAŞARILI! Regex ile Yakalanan Link: $finalUrl")
-                            loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
-                            linkFound = true
-                        }
-                    } else {
-                        Log.w("DizillaDebug", "UYARI: Iframe kelimesi var ama Regex src'yi bulamadı. Ham Veri: $rawHtml")
-                    }
+                if (match != null) {
+                    Log.d("DizillaDebug", "REGEX TEST BAŞARILI [$index] -> ${match.groupValues[1]}")
+                } else {
+                    Log.e("DizillaDebug", "REGEX TEST BAŞARISIZ [$index] -> Bu string içinden link seçilemedi!")
                 }
             }
 
-            linkFound
+            // Akışı bozmamak için false dönüyoruz, şu anki tek amacımız veriyi görmek.
+            false
 
         } catch (e: Exception) {
             Log.e("DizillaDebug", "Kritik Hata: ${e.message}")
