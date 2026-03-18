@@ -505,7 +505,7 @@ class Dizilla : MainAPI() {
 
             // IV büyük ihtimalle AES Key ile aynıdır. Eğer hata verirse
             // IvParameterSpec(ByteArray(16)) yazarak sıfır IV deneyebilirsin.
-            val ivSpec = IvParameterSpec(privateAESKey.toByteArray(Charsets.UTF_8))
+            val ivSpec = IvParameterSpec(ByteArray(16))
             val keySpec = SecretKeySpec(privateAESKey.toByteArray(Charsets.UTF_8), "AES")
 
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
