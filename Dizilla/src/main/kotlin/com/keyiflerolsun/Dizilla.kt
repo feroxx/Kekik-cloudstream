@@ -429,7 +429,7 @@ class Dizilla : MainAPI() {
             }
 
             val decodedData = decryptDizillaResponse(secureData)
-            if (decodedData?.isEmpty() == true || !decodedData?.trim().startsWith("{")) {
+            if (decodedData?.isEmpty() == true || !decodedData?.trim()?.startsWith("{")!!) {
                 return false
             }
 
