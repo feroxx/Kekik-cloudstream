@@ -437,7 +437,7 @@ override suspend fun loadLinks(
         val decodedJson = objectMapper.readTree(decodedData)
 
         // 3. Kaynak listesine erişim
-        val sources = decodedJson.path("RelatedResults")
+        val sources = decodedJson.path("rtFResults")
             .path("getEpisodeSources")
             .path("result")
 
