@@ -353,26 +353,18 @@ class Dizilla : MainAPI() {
         }
 
         // 5. Sonuçları SearchResponse formatına dönüştür
-        val home = mutableListOf<SearchResponse>()
+        val veriler = mutableListOf<SearchResponse>()
 
         contentJson.result?.forEach { item ->
-            // Başlık için fallback mekanizması
-            val title = item.title ?: "Unknown"
-
-            // Önceki konuşmamızdaki "listItems içindeki used_slug" mantığı
-            // Eğer item.slug null ise listItems array'inin ilk elemanına bakıyoruz
-            val slug = item.slug ?: "Unknown"
-
-            if (slug.isNotBlank()) {
-                val response = newTvSeriesSearchResponse(title, fixUrl(slug), TvType.TvSeries) {
-                    this.posterUrl = fixUrlNull(item.poster ?: item.poster)
-                }
-                home.add(response)
-            }
+            val name = item.title.toString()
+            val link = fixUrl(item.slug.toString())
+            val posterLink = item.poster.toString()
+            val toSearchResponse = toSearchResponse(name, link, posterLink)
+            veriler.add(toSearchResponse)
         }
 
-        println("Dizilla DEBUG - Found ${home.size} items after decryption")
-        return home
+        println("Dizilla DEBUG - Found ${veriler.size} items after decryption")
+        return veriler
     }
 
     private fun toSearchResponse(ad: String, link: String, posterLink: String): SearchResponse {
