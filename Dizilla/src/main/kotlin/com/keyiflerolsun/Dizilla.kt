@@ -407,67 +407,96 @@ class Dizilla : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        // 1. Sayfa kaynağını çek
-        val response = app.get(data, interceptor = interceptor)
-        val document = response.document
+override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    // 1. Sayfa isteği logu
+    Log.d("DizillaDebug", "İstek atılıyor: $data")
+    val response = app.get(data, interceptor = interceptor)
+    val document = response.document
 
-        // 2. __NEXT_DATA__ içeriğini al
-        val scriptTag = document.selectFirst("script#__NEXT_DATA__")?.data() ?: return false
+    // 2. Script tag kontrolü
+    val scriptElement = document.selectFirst("script#__NEXT_DATA__")
+    if (scriptElement == null) {
+        Log.e("DizillaDebug", "HATA: script#__NEXT_DATA__ bulunamadı!")
+        return false
+    }
+    val scriptData = scriptElement.data()
+    Log.d("DizillaDebug", "NextData bulundu, uzunluk: ${scriptData.length}")
 
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+    val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-        return try {
-            val rootNode = objectMapper.readTree(scriptTag)
+    return try {
+        val rootNode = objectMapper.readTree(scriptData)
+        
+        // 3. secureData hiyerarşisi kontrolü
+        val pageProps = rootNode.path("props").path("pageProps")
+        val secureData = pageProps.path("secureData").asText()
 
-            // Şifreli veri bloğunu bul (Senin gönderdiğin http_raw.txt içinde bu yapıda)
-            val secureData = rootNode.path("props")
-                .path("pageProps")
-                .path("secureData")
-                .asText()
+        if (secureData.isEmpty()) {
+            Log.e("DizillaDebug", "HATA: secureData boş veya yol yanlış! JSON yapısını kontrol et.")
+            // Eğer yol değiştiyse rootNode'u yazdırıp inceleyebilirsin:
+            // Log.d("DizillaDebug", "Root Node: $rootNode")
+            return false
+        }
+        Log.d("DizillaDebug", "secureData alındı, decryption başlıyor...")
 
-            if (secureData.isEmpty()) return false
+        // 4. Decryption logu
+        val decryptedJsonString = decryptDizillaResponse(secureData)
+        if (decryptedJsonString.isEmpty()) {
+            Log.e("DizillaDebug", "HATA: Decryption başarısız oldu (Boş string döndü)!")
+            return false
+        }
+        Log.d("DizillaDebug", "Decryption başarılı. İçerik: ${decryptedJsonString.take(100)}...")
 
-            // 3. Şifreyi çöz (Bu fonksiyonun sende tanımlı olduğunu varsayıyoruz)
-            val decryptedJsonString = decryptDizillaResponse(secureData)
-            val decryptedNode = objectMapper.readTree(decryptedJsonString)
+        val decryptedNode = objectMapper.readTree(decryptedJsonString)
 
-            // 4. JS dosyasındaki hiyerarşiyi takip et: RelatedResults -> getEpisodeSources -> result
-            val sources = decryptedNode.path("RelatedResults")
-                .path("getEpisodeSources")
-                .path("result")
+        // 5. Kaynak dizisi kontrolü
+        val sources = decryptedNode.path("RelatedResults")
+            .path("getEpisodeSources")
+            .path("result")
 
-            if (!sources.isArray || sources.isEmpty) return false
+        if (!sources.isArray || sources.isEmpty) {
+            Log.e("DizillaDebug", "HATA: 'result' dizisi bulunamadı veya boş! JSON Path hatalı olabilir.")
+            Log.d("DizillaDebug", "Decrypted JSON tam hali: $decryptedJsonString")
+            return false
+        }
 
-            var found = false
-            sources.forEach { node ->
-                // source_content içinde iframe HTML'i var
-                val rawHtml = node.path("source_content").asText()
+        Log.d("DizillaDebug", "Toplam kaynak sayısı: ${sources.size()}")
 
-                if (rawHtml.contains("iframe")) {
-                    // Jsoup ile HTML içinden src'yi çek
-                    val iframeUrl = Jsoup.parse(rawHtml).select("iframe").attr("src")
-                    val cleanUrl = fixUrlNull(iframeUrl)
+        var found = false
+        sources.forEachIndexed { index, node ->
+            val rawHtml = node.path("source_content").asText()
+            Log.d("DizillaDebug", "Kaynak #$index inceleniyor: ${rawHtml.take(50)}...")
+            
+            if (rawHtml.contains("iframe")) {
+                val iframeUrl = Jsoup.parse(rawHtml).select("iframe").attr("src")
+                val cleanUrl = fixUrlNull(iframeUrl)
 
-                    if (!cleanUrl.isNullOrEmpty()) {
-                        // Yakalanan link: https://sn.hotlinger.com/iframe.php?v=...
-                        loadExtractor(cleanUrl, "$mainUrl/", subtitleCallback, callback)
-                        found = true
-                    }
+                if (!cleanUrl.isNullOrEmpty()) {
+                    Log.d("DizillaDebug", "BAŞARILI: Iframe bulundu -> $cleanUrl")
+                    loadExtractor(cleanUrl, "$mainUrl/", subtitleCallback, callback)
+                    found = true
+                } else {
+                    Log.w("DizillaDebug", "UYARI: Iframe var ama src çekilemedi!")
                 }
             }
-            found
-        } catch (e: Exception) {
-            // Log: "Dizilla link yükleme hatası"
-            false
         }
+        
+        if (!found) Log.e("DizillaDebug", "HATA: Hiçbir geçerli iframe linki bulunamadı.")
+        found
+
+    } catch (e: Exception) {
+        Log.e("DizillaDebug", "KRİTİK HATA: ${e.message}")
+        e.printStackTrace()
+        false
     }
+}
+
 
     private fun decryptDizillaResponse(response: String): String? {
         try {
