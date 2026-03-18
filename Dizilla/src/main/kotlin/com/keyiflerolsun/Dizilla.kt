@@ -421,7 +421,6 @@ class Dizilla : MainAPI() {
 
         return try {
             val rootNode = objectMapper.readTree(script)
-
             val secureData = rootNode.path("props").path("pageProps").path("secureData").asText()
 
             if (secureData.isEmpty()) {
@@ -429,50 +428,58 @@ class Dizilla : MainAPI() {
                 return false
             }
 
-            // 1. Şifreyi çöz
             val decodedData = decryptDizillaResponse(secureData)
-            val decodedJson = objectMapper.readTree(decodedData)
-
-            // 2. Senin bulduğun kesin yol: RelatedResults -> getEpisodeSources -> result
-            val sources = decodedJson.path("RelatedResults")
-                .path("getEpisodeSources")
-                .path("result")
-
-            if (!sources.isArray || sources.isEmpty) {
-                Log.e("DizillaDebug", "HATA: Kaynak dizisi boş veya ulaşılamadı!")
+            if (decodedData?.isEmpty() == true || !decodedData?.trim().startsWith("{")) {
                 return false
             }
 
-            var count = 0
+            val decodedJson = objectMapper.readTree(decodedData)
 
-            // 3. Kaynakları tara
-            sources.forEach { node ->
-                val sourceContent = node.path("source_content").asText()
+            // Hiyerarşiden bağımsız olarak tüm source_content değerlerini çekiyoruz
+            val sourceContents = decodedJson.findValuesAsText("source_content")
 
-                if (sourceContent.contains("iframe", ignoreCase = true)) {
-                    // Jsoup ile raw HTML içinden linki çekiyoruz
-                    var iframeUrl = Jsoup.parse(sourceContent).select("iframe").attr("src")
+            if (sourceContents.isEmpty()) {
+                Log.e("DizillaDebug", "HATA: source_content bulunamadı!")
+                return false
+            }
 
-                    // CRITICAL FIX: Protokol bağımsız URL'leri düzeltiyoruz
-                    if (iframeUrl.startsWith("//")) {
-                        iframeUrl = "https:$iframeUrl"
-                    }
+            var linkFound = false
 
-                    val finalUrl = fixUrlNull(iframeUrl)
+            // Src değerini yakalayacak Regex (Çift veya tek tırnak fark etmeksizin içindekini alır)
+            val srcRegex = Regex("""src\s*=\s*["']([^"']+)["']""")
 
-                    if (!finalUrl.isNullOrEmpty()) {
-                        Log.d("DizillaDebug", "BAŞARILI! Yakalanan ve Düzeltilen Link: $finalUrl")
+            sourceContents.forEach { rawHtml ->
+                if (rawHtml.contains("iframe", ignoreCase = true)) {
 
-                        // Extractor'a gönder
-                        loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
-                        count++
+                    // Jsoup yerine Regex ile arama yapıyoruz
+                    val matchResult = srcRegex.find(rawHtml)
+
+                    if (matchResult != null) {
+                        // Regex'teki 1. grup, tırnak içindeki URL'yi verir
+                        var iframeUrl = matchResult.groupValues[1]
+
+                        // Protokol bağımsız URL düzeltmesi
+                        if (iframeUrl.startsWith("//")) {
+                            iframeUrl = "https:$iframeUrl"
+                        }
+
+                        val finalUrl = fixUrlNull(iframeUrl)
+
+                        if (!finalUrl.isNullOrEmpty()) {
+                            Log.d("DizillaDebug", "BAŞARILI! Regex ile Yakalanan Link: $finalUrl")
+                            loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
+                            linkFound = true
+                        }
+                    } else {
+                        Log.w("DizillaDebug", "UYARI: Iframe kelimesi var ama Regex src'yi bulamadı. Ham Veri: $rawHtml")
                     }
                 }
             }
 
-            count > 0
+            linkFound
+
         } catch (e: Exception) {
-            Log.e("DizillaDebug", "Hata Oluştu: ${e.message}")
+            Log.e("DizillaDebug", "Kritik Hata: ${e.message}")
             e.printStackTrace()
             false
         }
