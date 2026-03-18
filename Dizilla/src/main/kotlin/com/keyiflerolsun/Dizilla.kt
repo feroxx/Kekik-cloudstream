@@ -338,7 +338,7 @@ class Dizilla : MainAPI() {
 
         // 4. Decrypt edilmiş JSON metnini asıl veri modeline map'le
         val contentJson: SearchData = objectMapper.readValue(decryptedJson)
-
+        print("Dizilla DEBUG - decryptedJson $decryptedJson")
         if (contentJson.state != true) {
             return emptyList() // State false ise boş liste dönmek daha güvenlidir
         }
