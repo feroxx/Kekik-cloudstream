@@ -330,11 +330,14 @@ class Dizilla : MainAPI() {
         val searchResult: SearchResult = objectMapper.readValue(searchReq.toString())
 
         // 3. Şifreli "response" alanını çöz
-        val encryptedBlob = searchResult.response?.toString()
+        val encryptedBlob = searchResult.response
             ?: throw ErrorLoadingException("API response field is null")
 
-        val decryptedJson = decryptDizillaResponse(encryptedBlob)
-            ?: throw ErrorLoadingException("Decryption failed - Check AES Key or IV")
+        var decryptedJson = decryptDizillaResponse(encryptedBlob) ?: return emptyList()
+
+// Bazen başta garip karakterler kalabilir, temizleyelim
+        decryptedJson = decryptedJson.substringAfter("{")
+        decryptedJson = "{m" + decryptedJson
 
         // 4. Decrypt edilmiş JSON metnini asıl veri modeline map'le
         val contentJson: SearchData = objectMapper.readValue(decryptedJson)
