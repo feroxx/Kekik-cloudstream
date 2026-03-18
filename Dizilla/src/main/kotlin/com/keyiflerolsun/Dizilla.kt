@@ -231,19 +231,17 @@ class Dizilla : MainAPI() {
                     item.get("title")?.asText() ?:
                     return@mapNotNull null
 
-                    val slug = item.get("original_title")?.asText()
-                        ?.replace(Regex("[^a-zA-Z0-9\\s-]"), "") // Önce özel karakterleri temizle
-                        ?.replace(" ", "-") // Boşlukları tire ile değiştir
-                        ?.replace(Regex("-+"), "-") // Birden fazla tireyi tek tire yap
-                        ?.lowercase()
-                        ?: return@mapNotNull null
-
                     val poster = item.get("poster_url")?.asText() ?:
                     item.get("square_url")?.asText() ?:
                     item.get("face_url")?.asText() ?:
                     item.get("back_url")?.asText()
 
-                    newTvSeriesSearchResponse(title, fixUrl("/dizi/$slug"), TvType.TvSeries) {
+                    val usedslug = item.path("listItems").forEach { node ->
+                        val slug = node.path("used_slug").asText()
+                        println("Slug: $slug")
+                    }
+
+                    newTvSeriesSearchResponse(title, fixUrl("$usedslug"), TvType.TvSeries) {
                         this.posterUrl = fixUrlNull(poster)
                     }
                 }
