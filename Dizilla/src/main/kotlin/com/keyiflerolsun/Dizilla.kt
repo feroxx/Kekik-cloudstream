@@ -312,38 +312,58 @@ class Dizilla : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
+        // 1. API İsteği
         val searchReq = app.post(
             "${mainUrl}/api/bg/searchContent?searchterm=$query",
             headers = mapOf(
                 "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
-                "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
                 "Accept" to "application/json, text/plain, */*",
-                "Accept-Language" to "en-US,en;q=0.5",
                 "X-Requested-With" to "XMLHttpRequest",
-                "Sec-Fetch-Site" to "same-origin",
-                "Sec-Fetch-Mode" to "cors",
-                "Sec-Fetch-Dest" to "empty",
                 "Referer" to "${mainUrl}/"
-            ),
-            referer = "${mainUrl}/",
+            )
         )
+
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
+        // 2. İlk JSON yanıtını parse et (Genelde { "state": true, "response": "ENCRYPTED_BASE64_STRING" } yapısındadır)
         val searchResult: SearchResult = objectMapper.readValue(searchReq.toString())
-        val decodedSearch = base64Decode(searchResult.response.toString())
-        val contentJson: SearchData = objectMapper.readValue(decodedSearch)
+
+        // 3. Şifreli "response" alanını çöz
+        val encryptedBlob = searchResult.response?.toString()
+            ?: throw ErrorLoadingException("API response field is null")
+
+        val decryptedJson = decryptDizillaResponse(encryptedBlob)
+            ?: throw ErrorLoadingException("Decryption failed - Check AES Key or IV")
+
+        // 4. Decrypt edilmiş JSON metnini asıl veri modeline map'le
+        val contentJson: SearchData = objectMapper.readValue(decryptedJson)
+
         if (contentJson.state != true) {
-            throw ErrorLoadingException("Invalid Json response")
+            return emptyList() // State false ise boş liste dönmek daha güvenlidir
         }
-        val veriler = mutableListOf<SearchResponse>()
-        contentJson.result?.forEach {
-            val name = it.title.toString()
-            val link = fixUrl(it.slug.toString())
-            val posterLink = it.poster.toString()
-            val toSearchResponse = toSearchResponse(name, link, posterLink)
-            veriler.add(toSearchResponse)
+
+        // 5. Sonuçları SearchResponse formatına dönüştür
+        val home = mutableListOf<SearchResponse>()
+
+        contentJson.result?.forEach { item ->
+            // Başlık için fallback mekanizması
+            val title = item.title ?: "Unknown"
+
+            // Önceki konuşmamızdaki "listItems içindeki used_slug" mantığı
+            // Eğer item.slug null ise listItems array'inin ilk elemanına bakıyoruz
+            val slug = item.slug ?: "Unknown"
+
+            if (slug.isNotBlank()) {
+                val response = newTvSeriesSearchResponse(title, fixUrl(slug), TvType.TvSeries) {
+                    this.posterUrl = fixUrlNull(item.poster ?: item.poster)
+                }
+                home.add(response)
+            }
         }
-        return veriler
+
+        println("Dizilla DEBUG - Found ${home.size} items after decryption")
+        return home
     }
 
     private fun toSearchResponse(ad: String, link: String, posterLink: String): SearchResponse {

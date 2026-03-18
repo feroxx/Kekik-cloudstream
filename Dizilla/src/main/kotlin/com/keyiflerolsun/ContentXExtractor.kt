@@ -6,6 +6,7 @@ import android.util.Log
 import com.lagradost.cloudstream3.ErrorLoadingException
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.newSubtitleFile
 import com.lagradost.cloudstream3.utils.*
 
 open class ContentX : ExtractorApi() {
@@ -36,7 +37,7 @@ open class ContentX : ExtractorApi() {
         subUrls.add(subUrl)
 
         subtitleCallback.invoke(
-            SubtitleFile(
+            newSubtitleFile(
                 lang = subLang,
                 url = fixUrl(subUrl)
             )
