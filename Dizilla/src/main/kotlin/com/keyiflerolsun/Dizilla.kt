@@ -423,49 +423,35 @@ class Dizilla : MainAPI() {
             val rootNode = objectMapper.readTree(script)
             val secureData = rootNode.path("props").path("pageProps").path("secureData").asText()
 
-            if (secureData.isEmpty()) {
-                Log.e("DizillaDebug", "HATA: secureData bulunamadı (Sayfa yapısı değişmiş olabilir)")
-                return false
-            }
+            if (secureData.isEmpty()) return false
 
-            // 1. Şifreyi Çöz
             val decodedData = decryptDizillaResponse(secureData)
 
-            // --- KRİTİK TEŞHİS LOGLARI ---
-            Log.d("DizillaDebug", "Decoded Veri Uzunluğu: ${decodedData?.length} karakter")
-            Log.d("DizillaDebug", "Decoded Başlangıç: ${decodedData?.take(100)}")
-
-            if (decodedData?.isEmpty() == true) {
-                Log.e("DizillaDebug", "KRİTİK HATA: Decoded data tamamen BOŞ! decryptDizillaResponse içindeki Key veya IV değişmiş.")
-                return false
-            }
-
-            // 2. Güvenli JSON Parsing
-            val decodedJson = try {
-                objectMapper.readTree(decodedData)
-            } catch (ex: Exception) {
-                Log.e("DizillaDebug", "HATA: String JSON'a çevrilemedi! Jackson Hatası: ${ex.message}")
-                Log.e("DizillaDebug", "Çevrilemeyen Veri: ${decodedData?.take(500)}")
-                return false
-            }
-
-            // 3. Regex ile Iframe Avı
-            val sourceContents = decodedJson.findValuesAsText("source_content")
-
-            if (sourceContents.isEmpty()) {
-                Log.e("DizillaDebug", "HATA: JSON başarıyla çözüldü ama içinde 'source_content' bulunamadı.")
+            if (decodedData.isNullOrEmpty()) {
+                Log.e("DizillaDebug", "HATA: Decoded data boş!")
                 return false
             }
 
             var linkFound = false
-            val srcRegex = Regex("""src\s*=\s*\\?["']([^"'\\]+)\\?["']""")
 
-            sourceContents.forEach { rawHtml ->
-                val matchResult = srcRegex.find(rawHtml)
+            // 1. JSON Kurallarını ezip geçiyoruz!
+            // Ham string içinde "source_content":"..." kalıbını bulan Regex.
+            // İçerideki kaçış karakterli tırnakları (\") sorunsuz tolere eder.
+            val contentRegex = Regex(""""source_content"\s*:\s*"((?:[^"\\]|\\.)*)"""")
+            val matches = contentRegex.findAll(decodedData)
 
-                if (matchResult != null) {
-                    var iframeUrl = matchResult.groupValues[1]
+            matches.forEach { match ->
+                // 2. Regex ile yakalanan string'i JSON kaçış karakterlerinden temizle
+                val rawHtml = match.groupValues[1]
+                    .replace("\\\"", "\"")
+                    .replace("\\/", "/")
+                    .replace("\\\\", "\\")
 
+                // 3. Temizlenmiş HTML ( <iframe src="//..." ) içinden Jsoup ile src'yi al
+                if (rawHtml.contains("iframe", ignoreCase = true)) {
+                    var iframeUrl = Jsoup.parse(rawHtml).select("iframe").attr("src")
+
+                    // Protokol düzeltmesi
                     if (iframeUrl.startsWith("//")) {
                         iframeUrl = "https:$iframeUrl"
                     }
@@ -473,17 +459,21 @@ class Dizilla : MainAPI() {
                     val finalUrl = fixUrlNull(iframeUrl)
 
                     if (!finalUrl.isNullOrEmpty()) {
-                        Log.d("DizillaDebug", "BAŞARILI! Yakalanan Link: $finalUrl")
+                        Log.d("DizillaDebug", "BİNGO! Regex ile Kırık Veriden Alınan Link: $finalUrl")
                         loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
                         linkFound = true
                     }
                 }
             }
 
+            if (!linkFound) {
+                Log.e("DizillaDebug", "HATA: Regex taraması link bulamadı. Ham Veri: ${decodedData?.take(500)}")
+            }
+
             linkFound
 
         } catch (e: Exception) {
-            Log.e("DizillaDebug", "Genel Hata: ${e.message}")
+            Log.e("DizillaDebug", "Kritik Hata: ${e.message}")
             e.printStackTrace()
             false
         }
