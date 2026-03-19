@@ -40,7 +40,7 @@ import org.json.JSONException
 import org.json.JSONObject
 
 class InatBox : MainAPI() {
-    private val contentUrl = "https://dizibox.cfd"
+    private val contentUrl = "https://diziboxen.help"
 
     override var name = "InatBox"
     override val hasMainPage = true
@@ -53,7 +53,7 @@ class InatBox : MainAPI() {
     private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key
 
     override val mainPage = mainPageOf(
-        "https://boxyz.cfd/CDN/001_STR/boxyz.cfd/spor_v2.php" to "Spor Kanalları",
+        //"https://str.sprboxs.bar/CDN/001_STR/str.sprboxs.bar//spor_v2.php" to "Spor Kanalları",
         "${contentUrl}/tv/cable.php" to "Kanallar Liste 1",
         "${contentUrl}/tv/list2.php" to "Kanallar Liste 2",
         "${contentUrl}/tv/sinema.php" to "Sinema Kanalları",
