@@ -69,72 +69,88 @@ class CloseLoad : ExtractorApi() {
         }
     }
 
-private suspend fun decryptWithWebView(context: Context?, html: String): String? = withContext(Dispatchers.Main) {
-    try {
-        val webView = context?.let { WebView(it) }
-        webView?.settings?.javaScriptEnabled = true
+    private suspend fun decryptWithWebView(context: Context?, html: String): String? = withContext(Dispatchers.Main) {
+        try {
+            val webView = context?.let { WebView(it) }
+            webView?.settings?.javaScriptEnabled = true
 
-        val safeHtml = html.replace("`", "\\`").replace("$", "\\$")
+            // WebView içindeki console.log() çıktılarını Logcat'e (Kekik_JS) yönlendiriyoruz
+            webView?.webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                    Log.d("Kekik_JS", "${consoleMessage?.messageLevel()}: ${consoleMessage?.message()}")
+                    return true
+                }
+            }
 
-        val jsToExecute = """
+            val safeHtml = html.replace("`", "\\`").replace("$", "\\$")
+
+            val jsToExecute = """
             (function() {
                 try {
+                    console.log("Deşifre işlemi başlatıldı...");
                     var htmlContent = `${safeHtml}`;
-                    // 1. Packer bloğunu yakala
-                    var scriptMatch = htmlContent.match(/eval\(function\(p,a,c,k,e,d\).+?\.split\('\|'\)\)\)/);
                     
-                    if (scriptMatch) {
-                        var rawScript = scriptMatch[0];
-                        // 2. Packer'ı çöz ve içeriği 'unpacked' değişkenine at
-                        var unpacked = eval(rawScript.replace('eval(', '('));
-                        
-                        // 3. Unpacked kodu çalıştır (Fonksiyonlar ve değişkenler tanımlansın)
-                        eval(unpacked);
-                        
-                        // 4. Dinamik Değişken Bulucu:
-                        // Player'ın kaynak (src) atandığı ".2a({2a:VAR_NAME," kısmından VAR_NAME'i çekiyoruz.
-                        // Son scriptinde bu "3i" olarak görünüyor.
-                        var varNameMatch = unpacked.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
-                        var targetVar = varNameMatch ? varNameMatch[1] : null;
-                        
-                        if (targetVar) {
-                            var finalUrl = eval(targetVar);
-                            if (finalUrl && finalUrl.indexOf('http') !== -1) {
-                                return finalUrl;
-                            }
-                        }
-                        
-                        // Alternatif: Eğer yukarıdaki regex kaçarsa, doğrudan '3i' veya '2K' kontrolü yap
-                        if (typeof 3i !== 'undefined') return 3i;
-                        if (typeof 2K !== 'undefined') return 2K;
+                    // 1. Step: Packer tespiti
+                    var scriptMatch = htmlContent.match(/eval\(function\(p,a,c,k,e,d\).+?\.split\('\|'\)\)\)/);
+                    if (!scriptMatch) return "Error: Packer script bloğu bulunamadı";
+                    
+                    console.log("Packer bloğu yakalandı, unpack ediliyor...");
+                    var rawScript = scriptMatch[0];
+                    var unpacked = eval(rawScript.replace('eval(', '('));
+                    
+                    if (!unpacked) return "Error: Unpack işlemi başarısız oldu";
+                    console.log("Unpack başarılı. İçerik execute ediliyor...");
 
+                    // 2. Step: Unpacked kodu çalıştır (Fonksiyonları tanımla)
+                    eval(unpacked);
+                    
+                    // 3. Step: Değişken tespiti
+                    // Player init satırını ara: .2a({2a:DEGISKEN
+                    var varNameMatch = unpacked.match(/\.2a\s*:\s*([a-zA-Z0-9]+)/) || 
+                                       unpacked.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
+                    
+                    var targetVar = varNameMatch ? varNameMatch[1] : null;
+                    console.log("Tespit edilen değişken adı: " + targetVar);
+
+                    if (targetVar) {
+                        var finalUrl = eval(targetVar);
+                        if (finalUrl && finalUrl.indexOf('http') !== -1) {
+                            console.log("Gerçek URL başarıyla çözüldü.");
+                            return finalUrl;
+                        }
                     }
+                    
+                    // Fallback: Bilinen değişkenleri tek tek dene
+                    console.log("Regex başarısız, manuel fallback deneniyor...");
+                    if (typeof 3i !== 'undefined' && 3i.indexOf('http') !== -1) return 3i;
+                    if (typeof 2K !== 'undefined' && 2K.indexOf('http') !== -1) return 2K;
+
+                    return "Error: Link değişkeni (3i/2K) bulunamadı veya boş.";
                 } catch(e) { 
+                    console.error("JS Execution Error: " + e.message);
                     return "Error: " + e.message; 
                 }
-                return "Error: Script found but Variable extraction failed";
             })()
         """.trimIndent()
 
-        suspendCoroutine { cont ->
-            webView?.evaluateJavascript(jsToExecute) { result ->
-                val cleanResult = result?.trim()?.removeSurrounding("\"")
+            suspendCoroutine { cont ->
+                webView?.evaluateJavascript(jsToExecute) { result ->
+                    val cleanResult = result?.trim()?.removeSurrounding("\"")
 
-                if (cleanResult == null || cleanResult == "null" || cleanResult.isEmpty() || cleanResult.startsWith("Error:")) {
-                    Log.e("Kekik_Extractor", "Deşifre Başarısız: $cleanResult")
-                    cont.resume(null)
-                } else {
-                    // hls8 (fake) geliyorsa logla, gerçek geliyorsa (hls12/13) devam et
-                    Log.d("Kekik_Extractor", "Bulunan Link: $cleanResult")
-                    cont.resume(cleanResult)
+                    if (cleanResult == null || cleanResult == "null" || cleanResult.isEmpty() || cleanResult.startsWith("Error:")) {
+                        Log.e("Kekik_Extractor", "Deşifre Başarısız: $cleanResult")
+                        cont.resume(null)
+                    } else {
+                        Log.i("Kekik_Extractor", "Başarılı! URL: $cleanResult")
+                        cont.resume(cleanResult)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.e("Kekik_Extractor", "WebView Critical Error: ${e.message}")
+            null
         }
-    } catch (e: Exception) {
-        Log.e("Kekik_Extractor", "WebView Hatası: ${e.message}")
-        null
     }
-}
 
     private fun processSubtitles(document: Document, subtitleCallback: (SubtitleFile) -> Unit) {
         document.select("track").forEach { track ->
