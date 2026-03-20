@@ -74,7 +74,7 @@ class CloseLoad : ExtractorApi() {
         try {
             // 1. KOTLIN TARAFI: Sadece ihtiyacımız olan şifreli JS bloğunu çekiyoruz
             // DOT_MATCHES_ALL parametresi satır atlamalarını da dahil etmemizi sağlar
-            val packerRegex = """eval\(function\(p,a,c,k,e,d\).+?\.split\('\|'\)\)\)""".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val packerRegex = """eval\(function\(p, a, c, k, e, d\).+?\.split\('\|'\)\)\)""".toRegex(RegexOption.DOT_MATCHES_ALL)
             val scriptMatch = packerRegex.find(html)
 
             if (scriptMatch == null) {
