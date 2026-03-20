@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import org.jsoup.nodes.Document
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import android.util.Base64
 
 class CloseLoad : ExtractorApi() {
     override val name = "CloseLoad"
@@ -71,10 +72,24 @@ class CloseLoad : ExtractorApi() {
 
     private suspend fun decryptWithWebView(context: Context?, html: String): String? = withContext(Dispatchers.Main) {
         try {
+            // 1. KOTLIN TARAFI: Sadece ihtiyacımız olan şifreli JS bloğunu çekiyoruz
+            // DOT_MATCHES_ALL parametresi satır atlamalarını da dahil etmemizi sağlar
+            val packerRegex = """eval\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*d\s*\).+?\.split\('\|'\)\)\)""".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val scriptMatch = packerRegex.find(html)
+
+            if (scriptMatch == null) {
+                Log.e("Kekik_Extractor", "Deşifre Başarısız: HTML içinde Packer bloğu bulunamadı.")
+                return@withContext null
+            }
+
+            // 2. KOTLIN TARAFI: JS tarafında syntax hatası yememek için Base64'e çeviriyoruz
+            val rawEvalScript = scriptMatch.value
+            val base64Script = Base64.encodeToString(rawEvalScript.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+
             val webView = context?.let { WebView(it) }
             webView?.settings?.javaScriptEnabled = true
 
-            // WebView içindeki console.log() çıktılarını Logcat'e (Kekik_JS) yönlendiriyoruz
+            // Logları takip etmeye devam edelim
             webView?.webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                     Log.d("Kekik_JS", "${consoleMessage?.messageLevel()}: ${consoleMessage?.message()}")
@@ -82,52 +97,44 @@ class CloseLoad : ExtractorApi() {
                 }
             }
 
-            val safeHtml = html.replace("`", "\\`").replace("$", "\\$")
-
+            // 3. JAVASCRIPT TARAFI: Base64'ü çöz, Unpack et, Değişkeni Bul
             val jsToExecute = """
             (function() {
                 try {
-                    console.log("Deşifre işlemi başlatıldı...");
-                    var htmlContent = `${safeHtml}`;
+                    console.log("Base64 script alindi, decode ediliyor...");
+                    // Base64'ten UTF-8 string'e güvenli dönüşüm
+                    var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
                     
-                    // 1. Step: Packer tespiti
-                    var scriptMatch = htmlContent.match(/eval\(function\(p,a,c,k,e,d\).+?\.split\('\|'\)\)\)/);
-                    if (!scriptMatch) return "Error: Packer script bloğu bulunamadı";
-                    
-                    console.log("Packer bloğu yakalandı, unpack ediliyor...");
-                    var rawScript = scriptMatch[0];
+                    console.log("Unpack islemi basliyor...");
+                    // eval'i paranteze cevirip calistiriyoruz ki icindeki string'i (unpacked code) alalim
                     var unpacked = eval(rawScript.replace('eval(', '('));
                     
-                    if (!unpacked) return "Error: Unpack işlemi başarısız oldu";
-                    console.log("Unpack başarılı. İçerik execute ediliyor...");
-
-                    // 2. Step: Unpacked kodu çalıştır (Fonksiyonları tanımla)
-                    eval(unpacked);
+                    if (!unpacked) return "Error: Unpack islemi basarisiz oldu.";
                     
-                    // 3. Step: Değişken tespiti
-                    // Player init satırını ara: .2a({2a:DEGISKEN
-                    var varNameMatch = unpacked.match(/\.2a\s*:\s*([a-zA-Z0-9]+)/) || 
-                                       unpacked.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
+                    console.log("Unpack basarili. Degiskenler hafizaya aliniyor...");
+                    eval(unpacked); // Kodu calistir ve 3i, 3n vb. degiskenleri olustur
                     
+                    // Player source regex'i: .2a({2a:VAR_NAME
+                    var varNameMatch = unpacked.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
                     var targetVar = varNameMatch ? varNameMatch[1] : null;
-                    console.log("Tespit edilen değişken adı: " + targetVar);
+                    
+                    console.log("Tespit edilen degisken: " + targetVar);
 
                     if (targetVar) {
                         var finalUrl = eval(targetVar);
                         if (finalUrl && finalUrl.indexOf('http') !== -1) {
-                            console.log("Gerçek URL başarıyla çözüldü.");
                             return finalUrl;
                         }
                     }
                     
-                    // Fallback: Bilinen değişkenleri tek tek dene
-                    console.log("Regex başarısız, manuel fallback deneniyor...");
-                    if (typeof 3i !== 'undefined' && 3i.indexOf('http') !== -1) return 3i;
-                    if (typeof 2K !== 'undefined' && 2K.indexOf('http') !== -1) return 2K;
+                    // Fallback kontrolleri
+                    console.log("Regex kacirdi, fallback deneniyor...");
+                    if (typeof 3i !== 'undefined' && typeof 3i === 'string' && 3i.indexOf('http') !== -1) return 3i;
+                    if (typeof 2K !== 'undefined' && typeof 2K === 'string' && 2K.indexOf('http') !== -1) return 2K;
 
-                    return "Error: Link değişkeni (3i/2K) bulunamadı veya boş.";
+                    return "Error: Link bulunamadi. Unpacked baslangici: " + unpacked.substring(0, 50);
                 } catch(e) { 
-                    console.error("JS Execution Error: " + e.message);
+                    console.error("Execution Error: " + e.message);
                     return "Error: " + e.message; 
                 }
             })()
@@ -141,13 +148,13 @@ class CloseLoad : ExtractorApi() {
                         Log.e("Kekik_Extractor", "Deşifre Başarısız: $cleanResult")
                         cont.resume(null)
                     } else {
-                        Log.i("Kekik_Extractor", "Başarılı! URL: $cleanResult")
+                        Log.i("Kekik_Extractor", "Başarılı! Gerçek Link: $cleanResult")
                         cont.resume(cleanResult)
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("Kekik_Extractor", "WebView Critical Error: ${e.message}")
+            Log.e("Kekik_Extractor", "Sistem Hatası: ${e.message}")
             null
         }
     }
