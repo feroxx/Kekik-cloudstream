@@ -74,41 +74,45 @@ private suspend fun decryptWithWebView(context: Context?, html: String): String?
         val webView = context?.let { WebView(it) }
         webView?.settings?.javaScriptEnabled = true
 
-        // JS içinde çakışma olmaması için HTML içeriğini güvenli hale getiriyoruz
         val safeHtml = html.replace("`", "\\`").replace("$", "\\$")
 
         val jsToExecute = """
             (function() {
                 try {
                     var htmlContent = `${safeHtml}`;
-                    // Packer (eval) bloğunu yakalayan regex
+                    // 1. Packer bloğunu yakala
                     var scriptMatch = htmlContent.match(/eval\(function\(p,a,c,k,e,d\).+?\.split\('\|'\)\)\)/);
                     
                     if (scriptMatch) {
                         var rawScript = scriptMatch[0];
-                        // eval fonksiyonunu unpack ediyoruz
-                        var unpackedCode = eval(rawScript.replace('eval(', '('));
+                        // 2. Packer'ı çöz ve içeriği 'unpacked' değişkenine at
+                        var unpacked = eval(rawScript.replace('eval(', '('));
                         
-                        // Senior Tip: Değişken adı değişebileceği için (2K değil 3i olmuş) 
-                        // player başlatma satırından (myPlayer.src) gerçek değişken adını bulalım.
-                        // JS'de: 9.2a({2a:3i, ...}) formatında. Buradaki 3i'yi yakalıyoruz.
-                        var varNameMatch = unpackedCode.match(/\.2a\(\{2a:([a-zA-Z0-9]+)/);
-                        var targetVar = varNameMatch ? varNameMatch[1] : "3i"; // Bulamazsa 3i'ye fallback yap
+                        // 3. Unpacked kodu çalıştır (Fonksiyonlar ve değişkenler tanımlansın)
+                        eval(unpacked);
                         
-                        // unpack edilmiş kodu execute et ki değişkenler (3i, 3n vb.) hafızaya yüklensin
-                        eval(unpackedCode);
+                        // 4. Dinamik Değişken Bulucu:
+                        // Player'ın kaynak (src) atandığı ".2a({2a:VAR_NAME," kısmından VAR_NAME'i çekiyoruz.
+                        // Son scriptinde bu "3i" olarak görünüyor.
+                        var varNameMatch = unpacked.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
+                        var targetVar = varNameMatch ? varNameMatch[1] : null;
                         
-                        // Değişkeni döndür
-                        var result = eval(targetVar);
-                        
-                        if (typeof result !== 'undefined' && result !== null) {
-                            return result;
+                        if (targetVar) {
+                            var finalUrl = eval(targetVar);
+                            if (finalUrl && finalUrl.indexOf('http') !== -1) {
+                                return finalUrl;
+                            }
                         }
+                        
+                        // Alternatif: Eğer yukarıdaki regex kaçarsa, doğrudan '3i' veya '2K' kontrolü yap
+                        if (typeof 3i !== 'undefined') return 3i;
+                        if (typeof 2K !== 'undefined') return 2K;
+
                     }
                 } catch(e) { 
                     return "Error: " + e.message; 
                 }
-                return "Error: Script or Variable not found";
+                return "Error: Script found but Variable extraction failed";
             })()
         """.trimIndent()
 
@@ -117,15 +121,17 @@ private suspend fun decryptWithWebView(context: Context?, html: String): String?
                 val cleanResult = result?.trim()?.removeSurrounding("\"")
 
                 if (cleanResult == null || cleanResult == "null" || cleanResult.isEmpty() || cleanResult.startsWith("Error:")) {
-                    Log.e("Kekik_Extractor", "JS Deşifre Hatası: $cleanResult")
+                    Log.e("Kekik_Extractor", "Deşifre Başarısız: $cleanResult")
                     cont.resume(null)
                 } else {
+                    // hls8 (fake) geliyorsa logla, gerçek geliyorsa (hls12/13) devam et
+                    Log.d("Kekik_Extractor", "Bulunan Link: $cleanResult")
                     cont.resume(cleanResult)
                 }
             }
         }
     } catch (e: Exception) {
-        Log.e("Kekik_Extractor", "WebView Başlatma Hatası: ${e.message}")
+        Log.e("Kekik_Extractor", "WebView Hatası: ${e.message}")
         null
     }
 }
