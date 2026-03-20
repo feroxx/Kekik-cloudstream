@@ -42,7 +42,7 @@ class CloseLoad : ExtractorApi() {
 
             // WebView ile JS deşifre işlemi
             // 'app.context' Cloudstream'in sağladığı global context'tir.
-            val realUrl = decryptWithWebView(com.lagradost.cloudstream3.CloudStreamApp.context, html)
+            val realUrl = decryptWithWebView(com.lagradost.cloudstream3.CloudStreamApp.context, response.document)
 
             if (!realUrl.isNullOrBlank() && realUrl.startsWith("http")) {
                 callback.invoke(
@@ -70,26 +70,26 @@ class CloseLoad : ExtractorApi() {
         }
     }
 
-    private suspend fun decryptWithWebView(context: Context?, html: String): String? = withContext(Dispatchers.Main) {
+    private suspend fun decryptWithWebView(context: Context?, document: Document): String? = withContext(Dispatchers.Main) {
         try {
-            // 1. KOTLIN TARAFI: Sadece ihtiyacımız olan şifreli JS bloğunu çekiyoruz
-            // DOT_MATCHES_ALL parametresi satır atlamalarını da dahil etmemizi sağlar
-            val packerRegex = """eval\(function\(p, a, c, k, e, d\).+?\.split\('\|'\)\)\)""".toRegex(RegexOption.DOT_MATCHES_ALL)
-            val scriptMatch = packerRegex.find(html)
+            // 1. KOTLIN TARAFI: Regex eziyetine son! Jsoup ile scripti doğrudan yakalıyoruz.
+            // HTML içindeki tüm <script> taglerini dolaş ve içinde packer fonksiyonu olanı bul.
+            val scriptContent = document.select("script").map { it.data() }.firstOrNull {
+                // Boşlukları silip arayarak, site sahibinin araya koyduğu tuzak boşlukları bypass ediyoruz
+                it.replace("\\s".toRegex(), "").contains("eval(function(p,a,c,k,e,d)")
+            }
 
-            if (scriptMatch == null) {
-                Log.e("Kekik_Extractor", "Deşifre Başarısız: HTML içinde Packer bloğu bulunamadı.")
+            if (scriptContent.isNullOrBlank()) {
+                Log.e("Kekik_Extractor", "Deşifre Başarısız: Document içinde Packer scripti bulunamadı.")
                 return@withContext null
             }
 
-            // 2. KOTLIN TARAFI: JS tarafında syntax hatası yememek için Base64'e çeviriyoruz
-            val rawEvalScript = scriptMatch.value
-            val base64Script = Base64.encodeToString(rawEvalScript.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            // 2. KOTLIN TARAFI: Syntax hatası yememek için yine Base64 Köprüsü kullanıyoruz
+            val base64Script = Base64.encodeToString(scriptContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
             val webView = context?.let { WebView(it) }
             webView?.settings?.javaScriptEnabled = true
 
-            // Logları takip etmeye devam edelim
             webView?.webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                     Log.d("Kekik_JS", "${consoleMessage?.messageLevel()}: ${consoleMessage?.message()}")
@@ -97,48 +97,57 @@ class CloseLoad : ExtractorApi() {
                 }
             }
 
-            // 3. JAVASCRIPT TARAFI: Base64'ü çöz, Unpack et, Değişkeni Bul
+            // 3. JAVASCRIPT TARAFI: Eval Hijacking (Zekice Çözüm)
             val jsToExecute = """
-            (function() {
-                try {
-                    console.log("Base64 script alindi, decode ediliyor...");
-                    // Base64'ten UTF-8 string'e güvenli dönüşüm
-                    var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
-                    
-                    console.log("Unpack islemi basliyor...");
-                    // eval'i paranteze cevirip calistiriyoruz ki icindeki string'i (unpacked code) alalim
-                    var unpacked = eval(rawScript.replace('eval(', '('));
-                    
-                    if (!unpacked) return "Error: Unpack islemi basarisiz oldu.";
-                    
-                    console.log("Unpack basarili. Degiskenler hafizaya aliniyor...");
-                    eval(unpacked); // Kodu calistir ve 3i, 3n vb. degiskenleri olustur
-                    
-                    // Player source regex'i: .2a({2a:VAR_NAME
-                    var varNameMatch = unpacked.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
-                    var targetVar = varNameMatch ? varNameMatch[1] : null;
-                    
-                    console.log("Tespit edilen degisken: " + targetVar);
-
-                    if (targetVar) {
-                        var finalUrl = eval(targetVar);
-                        if (finalUrl && finalUrl.indexOf('http') !== -1) {
-                            return finalUrl;
+                (function() {
+                    try {
+                        var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
+                        
+                        var interceptedCode = "";
+                        var originalEval = window.eval;
+                        
+                        // Eval fonksiyonunu gasp ediyoruz (Hijack)
+                        window.eval = function(code) {
+                            interceptedCode = code; // Çözülmüş orijinal kodu yakaladık!
+                            window.eval = originalEval; // Sistemi bozmamak için eval'i eski haline getiriyoruz
+                            return originalEval(code); // Kodu normal şekilde çalıştır ki değişkenler oluşsun
+                        };
+                        
+                        // Siteye ait scripti çalıştır. Bu işlem sırasında bizim sahte eval'imiz tetiklenecek.
+                        try {
+                            originalEval(rawScript);
+                        } catch(e) {
+                            console.log("Script calisirken onemsiz bir hata verdi (Görmezden gelinebilir): " + e.message);
                         }
-                    }
-                    
-                    // Fallback kontrolleri
-                    console.log("Regex kacirdi, fallback deneniyor...");
-                    if (typeof 3i !== 'undefined' && typeof 3i === 'string' && 3i.indexOf('http') !== -1) return 3i;
-                    if (typeof 2K !== 'undefined' && typeof 2K === 'string' && 2K.indexOf('http') !== -1) return 2K;
+                        
+                        if (!interceptedCode) return "Error: Eval tetiklenmedi, kod yakalanamadi.";
+                        
+                        console.log("Kod basariyla gasp edildi! Degisken araniyor...");
+                        
+                        // Player'ın kaynak (src) atandığı satırı bul
+                        var varNameMatch = interceptedCode.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
+                        var targetVar = varNameMatch ? varNameMatch[1] : null;
+                        
+                        console.log("Tespit edilen degisken adi: " + targetVar);
 
-                    return "Error: Link bulunamadi. Unpacked baslangici: " + unpacked.substring(0, 50);
-                } catch(e) { 
-                    console.error("Execution Error: " + e.message);
-                    return "Error: " + e.message; 
-                }
-            })()
-        """.trimIndent()
+                        // Degiskenin icindeki linki al
+                        if (targetVar && typeof window[targetVar] !== 'undefined') {
+                            var finalUrl = window[targetVar];
+                            if (finalUrl && finalUrl.indexOf('http') !== -1) {
+                                return finalUrl;
+                            }
+                        }
+                        
+                        // Fallback: Bilinen değişkenleri doğrudan kontrol et
+                        if (typeof window['3i'] !== 'undefined' && typeof window['3i'] === 'string' && window['3i'].indexOf('http') !== -1) return window['3i'];
+                        if (typeof window['2K'] !== 'undefined' && typeof window['2K'] === 'string' && window['2K'].indexOf('http') !== -1) return window['2K'];
+
+                        return "Error: Link bulunamadi. Gasp edilen kod baslangici: " + interceptedCode.substring(0, 100);
+                    } catch(e) { 
+                        return "Error: " + e.message; 
+                    }
+                })()
+            """.trimIndent()
 
             suspendCoroutine { cont ->
                 webView?.evaluateJavascript(jsToExecute) { result ->
