@@ -69,58 +69,66 @@ class CloseLoad : ExtractorApi() {
         }
     }
 
-    private suspend fun decryptWithWebView(context: Context?, html: String): String? = withContext(Dispatchers.Main) {
-        // Cloudstream'in ana activity referansını alıyoruz
+private suspend fun decryptWithWebView(context: Context?, html: String): String? = withContext(Dispatchers.Main) {
+    try {
+        val webView = context?.let { WebView(it) }
+        webView?.settings?.javaScriptEnabled = true
 
-        try {
-            val webView = context?.let { WebView(it) }
-            webView?.settings?.javaScriptEnabled = true
+        // JS içinde çakışma olmaması için HTML içeriğini güvenli hale getiriyoruz
+        val safeHtml = html.replace("`", "\\`").replace("$", "\\$")
 
-            // JS içinde çakışma olmaması için HTML içeriğini güvenli hale getiriyoruz
-            val safeHtml = html.replace("`", "\\`").replace("$", "\\$")
-
-            val jsToExecute = """
+        val jsToExecute = """
             (function() {
                 try {
-                    var htmlContent = `$safeHtml`;
+                    var htmlContent = `${safeHtml}`;
                     // Packer (eval) bloğunu yakalayan regex
                     var scriptMatch = htmlContent.match(/eval\(function\(p,a,c,k,e,d\).+?\.split\('\|'\)\)\)/);
                     
                     if (scriptMatch) {
                         var rawScript = scriptMatch[0];
-                        // eval fonksiyonunu unpack edip çalıştırıyoruz (eval'i paranteze çevirerek)
-                        eval(rawScript.replace('eval(', '(')); 
+                        // eval fonksiyonunu unpack ediyoruz
+                        var unpackedCode = eval(rawScript.replace('eval(', '('));
                         
-                        // '3w' fonksiyonu çalıştıktan sonra '2K' değişkeni gerçek linki tutar
-                        if (typeof 2K !== 'undefined' && 2K !== null) {
-                            return 2K;
+                        // Senior Tip: Değişken adı değişebileceği için (2K değil 3i olmuş) 
+                        // player başlatma satırından (myPlayer.src) gerçek değişken adını bulalım.
+                        // JS'de: 9.2a({2a:3i, ...}) formatında. Buradaki 3i'yi yakalıyoruz.
+                        var varNameMatch = unpackedCode.match(/\.2a\(\{2a:([a-zA-Z0-9]+)/);
+                        var targetVar = varNameMatch ? varNameMatch[1] : "3i"; // Bulamazsa 3i'ye fallback yap
+                        
+                        // unpack edilmiş kodu execute et ki değişkenler (3i, 3n vb.) hafızaya yüklensin
+                        eval(unpackedCode);
+                        
+                        // Değişkeni döndür
+                        var result = eval(targetVar);
+                        
+                        if (typeof result !== 'undefined' && result !== null) {
+                            return result;
                         }
                     }
                 } catch(e) { 
                     return "Error: " + e.message; 
                 }
-                return null;
+                return "Error: Script or Variable not found";
             })()
         """.trimIndent()
 
-            suspendCoroutine { cont ->
-                webView?.evaluateJavascript(jsToExecute) { result ->
-                    // WebView sonucu JSON string (çift tırnaklı) döner, temizliyoruz
-                    val cleanResult = result?.trim()?.removeSurrounding("\"")
+        suspendCoroutine { cont ->
+            webView?.evaluateJavascript(jsToExecute) { result ->
+                val cleanResult = result?.trim()?.removeSurrounding("\"")
 
-                    if (cleanResult == "null" || cleanResult.isNullOrBlank() || cleanResult.startsWith("Error:")) {
-                        Log.e("Kekik_Extractor", "JS Deşifre Hatası veya Boş Sonuç: $cleanResult")
-                        cont.resume(null)
-                    } else {
-                        cont.resume(cleanResult)
-                    }
+                if (cleanResult == null || cleanResult == "null" || cleanResult.isEmpty() || cleanResult.startsWith("Error:")) {
+                    Log.e("Kekik_Extractor", "JS Deşifre Hatası: $cleanResult")
+                    cont.resume(null)
+                } else {
+                    cont.resume(cleanResult)
                 }
             }
-        } catch (e: Exception) {
-            Log.e("Kekik_Extractor", "WebView Başlatma Hatası: ${e.message}")
-            null
         }
+    } catch (e: Exception) {
+        Log.e("Kekik_Extractor", "WebView Başlatma Hatası: ${e.message}")
+        null
     }
+}
 
     private fun processSubtitles(document: Document, subtitleCallback: (SubtitleFile) -> Unit) {
         document.select("track").forEach { track ->
