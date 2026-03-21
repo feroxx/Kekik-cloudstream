@@ -72,19 +72,16 @@ class CloseLoad : ExtractorApi() {
 
     private suspend fun decryptWithWebView(context: Context?, document: Document): String? = withContext(Dispatchers.Main) {
         try {
-            // 1. KOTLIN TARAFI: Regex eziyetine son! Jsoup ile scripti doğrudan yakalıyoruz.
-            // HTML içindeki tüm <script> taglerini dolaş ve içinde packer fonksiyonu olanı bul.
+            // 1. KOTLIN TARAFI: HTML içindeki şifreli (Packer) JS bloğunu Jsoup ile alıyoruz.
             val scriptContent = document.select("script").map { it.data() }.firstOrNull {
-                // Boşlukları silip arayarak, site sahibinin araya koyduğu tuzak boşlukları bypass ediyoruz
                 it.replace("\\s".toRegex(), "").contains("eval(function(p,a,c,k,e,d)")
             }
 
             if (scriptContent.isNullOrBlank()) {
-                Log.e("Kekik_Extractor", "Deşifre Başarısız: Document içinde Packer scripti bulunamadı.")
+                Log.e("Kekik_Extractor", "Deşifre Başarısız: Packer scripti bulunamadı.")
                 return@withContext null
             }
 
-            // 2. KOTLIN TARAFI: Syntax hatası yememek için yine Base64 Köprüsü kullanıyoruz
             val base64Script = Base64.encodeToString(scriptContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
             val webView = context?.let { WebView(it) }
@@ -97,57 +94,99 @@ class CloseLoad : ExtractorApi() {
                 }
             }
 
-            // 3. JAVASCRIPT TARAFI: Eval Hijacking (Zekice Çözüm)
+            // 3. JAVASCRIPT TARAFI: Deep Proxy Sandboxing (Zekice Çözüm)
             val jsToExecute = """
-                (function() {
-                    try {
-                        var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
-                        
-                        var interceptedCode = "";
-                        var originalEval = window.eval;
-                        
-                        // Eval fonksiyonunu gasp ediyoruz (Hijack)
-                        window.eval = function(code) {
-                            interceptedCode = code; // Çözülmüş orijinal kodu yakaladık!
-                            window.eval = originalEval; // Sistemi bozmamak için eval'i eski haline getiriyoruz
-                            return originalEval(code); // Kodu normal şekilde çalıştır ki değişkenler oluşsun
-                        };
-                        
-                        // Siteye ait scripti çalıştır. Bu işlem sırasında bizim sahte eval'imiz tetiklenecek.
-                        try {
-                            originalEval(rawScript);
-                        } catch(e) {
-                            console.log("Script calisirken onemsiz bir hata verdi (Görmezden gelinebilir): " + e.message);
-                        }
-                        
-                        if (!interceptedCode) return "Error: Eval tetiklenmedi, kod yakalanamadi.";
-                        
-                        console.log("Kod basariyla gasp edildi! Degisken araniyor...");
-                        
-                        // Player'ın kaynak (src) atandığı satırı bul
-                        var varNameMatch = interceptedCode.match(/\.2a\s*\(\s*\{\s*2a\s*:\s*([a-zA-Z0-9]+)/);
-                        var targetVar = varNameMatch ? varNameMatch[1] : null;
-                        
-                        console.log("Tespit edilen degisken adi: " + targetVar);
-
-                        // Degiskenin icindeki linki al
-                        if (targetVar && typeof window[targetVar] !== 'undefined') {
-                            var finalUrl = window[targetVar];
-                            if (finalUrl && finalUrl.indexOf('http') !== -1) {
-                                return finalUrl;
-                            }
-                        }
-                        
-                        // Fallback: Bilinen değişkenleri doğrudan kontrol et
-                        if (typeof window['3i'] !== 'undefined' && typeof window['3i'] === 'string' && window['3i'].indexOf('http') !== -1) return window['3i'];
-                        if (typeof window['2K'] !== 'undefined' && typeof window['2K'] === 'string' && window['2K'].indexOf('http') !== -1) return window['2K'];
-
-                        return "Error: Link bulunamadi. Gasp edilen kod baslangici: " + interceptedCode.substring(0, 100);
-                    } catch(e) { 
-                        return "Error: " + e.message; 
+            (function() {
+                try {
+                    var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
+                    
+                    window.extractedUrl = null;
+                    window.proxyDepth = 0;
+                    
+                    // Sahte Linkleri ekarte edip gerçek M3U8/MP4/TXT linkini bulan filtre
+                    function isValidUrl(s) {
+                        return typeof s === 'string' && 
+                               s.indexOf('http') === 0 && 
+                               s.length > 20 && 
+                               s.indexOf(' ') === -1 && 
+                               (s.indexOf('mp4') !== -1 || s.indexOf('m3u8') !== -1 || s.indexOf('master') !== -1 || s.indexOf('hls') !== -1);
                     }
-                })()
-            """.trimIndent()
+                    
+                    // Deep Proxy: Hata yutan, sonsuz derinlikte sahte obje oluşturucu
+                    function createDeepProxy(name) {
+                        var noop = function(){};
+                        return new Proxy(noop, {
+                            get: function(target, prop) {
+                                if (prop === 'toString' || prop === 'valueOf') return function(){ return name; };
+                                if (prop === Symbol.toPrimitive) return function(){ return name; };
+                                return createDeepProxy(name + '.' + String(prop));
+                            },
+                            apply: function(target, thisArg, argsList) {
+                                for (var i = 0; i < argsList.length; i++) {
+                                    var arg = argsList[i];
+                                    
+                                    // Argüman direkt string URL ise yakala
+                                    if (isValidUrl(arg)) {
+                                        window.extractedUrl = arg;
+                                    } 
+                                    // Argüman obje ise (örn: {src: "http..."}) içindeki değerleri kontrol et
+                                    else if (arg && typeof arg === 'object') {
+                                        for (var k in arg) {
+                                            if (isValidUrl(arg[k])) {
+                                                window.extractedUrl = arg[k];
+                                            }
+                                        }
+                                    } 
+                                    // Argüman bir fonksiyonsa (örn: .ready(function(){...})) anında çalıştır
+                                    else if (typeof arg === 'function') {
+                                        if (window.proxyDepth < 20) {
+                                            window.proxyDepth++;
+                                            try { arg(); } catch(e) { console.error("Callback Hatasi: " + e.message); }
+                                            window.proxyDepth--;
+                                        }
+                                    }
+                                }
+                                return createDeepProxy(name + '()');
+                            },
+                            set: function() { return true; } // Atamalarda çökmemesi için (örn: videojs.Vhs.GOAL = 90)
+                        });
+                    }
+
+                    // Eksik olan kütüphaneleri ($, videojs, document) sahte (Proxy) objelerle dolduruyoruz
+                    // Artık $(document).ready(...) veya videojs.Player... hata vermeyecek!
+                    window.$ = window.jQuery = createDeepProxy('$');
+                    window.videojs = createDeepProxy('videojs');
+                    window.document = createDeepProxy('document');
+                    
+                    var interceptedCode = "";
+                    var originalEval = window.eval;
+                    
+                    // Eval Hijack
+                    window.eval = function(code) {
+                        interceptedCode = code;
+                        window.eval = originalEval;
+                        return originalEval(code); // Kodu çalıştır ki değişkenler hesaplansın
+                    };
+                    
+                    // Packer scriptini başlat
+                    try {
+                        originalEval(rawScript);
+                    } catch(e) {
+                        console.log("Onemsiz Packer Hatasi (Görmezden gelinebilir): " + e.message);
+                    }
+                    
+                    // Eğer Proxy tuzağımıza URL düştüyse işlemi bitir
+                    if (window.extractedUrl) {
+                        console.log("MUKEMMEL: URL Proxy Sandigi'na dustu!");
+                        return window.extractedUrl;
+                    }
+
+                    return "Error: URL bulunamadı. Proxy bos kaldi.";
+                } catch(e) { 
+                    return "Error: Fatal JS Error - " + e.message; 
+                }
+            })()
+        """.trimIndent()
 
             suspendCoroutine { cont ->
                 webView?.evaluateJavascript(jsToExecute) { result ->
