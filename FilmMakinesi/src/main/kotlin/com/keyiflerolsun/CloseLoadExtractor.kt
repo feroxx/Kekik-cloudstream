@@ -38,11 +38,11 @@ class CloseLoad : ExtractorApi() {
 
         try {
             val response = app.get(url, referer = mainUrl, headers = headers2)
-            val html = response.text
+            val document = response.document
 
             // WebView ile JS deşifre işlemi
             // 'app.context' Cloudstream'in sağladığı global context'tir.
-            val realUrl = decryptWithWebView(com.lagradost.cloudstream3.CloudStreamApp.context, response.document)
+            val realUrl = decryptWithWebView(com.lagradost.cloudstream3.CloudStreamApp.context, document)
 
             if (!realUrl.isNullOrBlank() && realUrl.startsWith("http")) {
                 callback.invoke(
@@ -72,7 +72,7 @@ class CloseLoad : ExtractorApi() {
 
     private suspend fun decryptWithWebView(context: Context?, document: Document): String? = withContext(Dispatchers.Main) {
         try {
-            // 1. KOTLIN TARAFI: HTML içindeki şifreli (Packer) JS bloğunu Jsoup ile alıyoruz.
+            // 1. Şifreli Packer kodunu Jsoup ile buluyoruz (Boşluk/Satır bağımsız Regex ile)
             val scriptContent = document.select("script").map { it.data() }.firstOrNull {
                 it.replace("\\s".toRegex(), "").contains("eval(function(p,a,c,k,e,d)")
             }
@@ -82,111 +82,111 @@ class CloseLoad : ExtractorApi() {
                 return@withContext null
             }
 
+            // 2. JS Motorunu çökertmemek için Base64 köprüsü
             val base64Script = Base64.encodeToString(scriptContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
             val webView = context?.let { WebView(it) }
             webView?.settings?.javaScriptEnabled = true
 
+            // Logcat bağlantısı
             webView?.webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                    Log.d("Kekik_JS", "${consoleMessage?.messageLevel()}: ${consoleMessage?.message()}")
+                    Log.d("Kekik_JS", "LOG: ${consoleMessage?.message()}")
                     return true
                 }
             }
 
-            // 3. JAVASCRIPT TARAFI: Deep Proxy Sandboxing (Zekice Çözüm)
+            // 3. JAVASCRIPT TARAFI: DOM Zehirleme + Deep Proxy
             val jsToExecute = """
-            (function() {
-                try {
-                    var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
-                    
-                    window.extractedUrl = null;
-                    window.proxyDepth = 0;
-                    
-                    // Sahte Linkleri ekarte edip gerçek M3U8/MP4/TXT linkini bulan filtre
-                    function isValidUrl(s) {
-                        return typeof s === 'string' && 
-                               s.indexOf('http') === 0 && 
-                               s.length > 20 && 
-                               s.indexOf(' ') === -1 && 
-                               (s.indexOf('mp4') !== -1 || s.indexOf('m3u8') !== -1 || s.indexOf('master') !== -1 || s.indexOf('hls') !== -1);
-                    }
-                    
-                    // Deep Proxy: Hata yutan, sonsuz derinlikte sahte obje oluşturucu
-                    function createDeepProxy(name) {
-                        var noop = function(){};
-                        return new Proxy(noop, {
-                            get: function(target, prop) {
-                                if (prop === 'toString' || prop === 'valueOf') return function(){ return name; };
-                                if (prop === Symbol.toPrimitive) return function(){ return name; };
-                                return createDeepProxy(name + '.' + String(prop));
-                            },
-                            apply: function(target, thisArg, argsList) {
-                                for (var i = 0; i < argsList.length; i++) {
-                                    var arg = argsList[i];
-                                    
-                                    // Argüman direkt string URL ise yakala
-                                    if (isValidUrl(arg)) {
-                                        window.extractedUrl = arg;
-                                    } 
-                                    // Argüman obje ise (örn: {src: "http..."}) içindeki değerleri kontrol et
-                                    else if (arg && typeof arg === 'object') {
-                                        for (var k in arg) {
-                                            if (isValidUrl(arg[k])) {
-                                                window.extractedUrl = arg[k];
+                (function() {
+                    try {
+                        // BÜYÜK DUVARI YIKIYORUZ: Cookie SecurityError Bypass!
+                        try {
+                            var fakeCookie = "";
+                            Object.defineProperty(Document.prototype, 'cookie', {
+                                get: function() { return fakeCookie; },
+                                set: function(v) { fakeCookie = v; },
+                                configurable: true
+                            });
+                            console.log("Cookie bypass kalkanı aktif.");
+                        } catch(e) { console.log("Cookie bypass uyarisiz gecildi."); }
+
+                        var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
+                        window.extractedUrl = null;
+                        window.proxyDepth = 0;
+                        
+                        // İhtiyacımız olan linkin standartlarını belirliyoruz
+                        function isValidUrl(s) {
+                            return typeof s === 'string' && 
+                                   s.indexOf('http') === 0 && 
+                                   s.length > 20 && 
+                                   s.indexOf(' ') === -1 && 
+                                   (s.indexOf('mp4') !== -1 || s.indexOf('m3u8') !== -1 || s.indexOf('master') !== -1 || s.indexOf('hls') !== -1);
+                        }
+                        
+                        // Deep Proxy: Tüm fonksiyonlara 'Evet' diyen ama içlerindeki linki çalan ajanımız
+                        function createDeepProxy(name) {
+                            var noop = function(){};
+                            return new Proxy(noop, {
+                                get: function(target, prop) {
+                                    if (prop === 'toString' || prop === 'valueOf') return function(){ return name; };
+                                    if (prop === Symbol.toPrimitive) return function(){ return name; };
+                                    if (prop === 'then') return undefined; // Promise hatasını önlemek için
+                                    return createDeepProxy(name + '.' + String(prop));
+                                },
+                                apply: function(target, thisArg, argsList) {
+                                    for (var i = 0; i < argsList.length; i++) {
+                                        var arg = argsList[i];
+                                        
+                                        if (isValidUrl(arg)) window.extractedUrl = arg;
+                                        else if (arg && typeof arg === 'object') {
+                                            for (var k in arg) {
+                                                if (isValidUrl(arg[k])) window.extractedUrl = arg[k];
                                             }
                                         }
-                                    } 
-                                    // Argüman bir fonksiyonsa (örn: .ready(function(){...})) anında çalıştır
-                                    else if (typeof arg === 'function') {
-                                        if (window.proxyDepth < 20) {
-                                            window.proxyDepth++;
-                                            try { arg(); } catch(e) { console.error("Callback Hatasi: " + e.message); }
-                                            window.proxyDepth--;
+                                        else if (typeof arg === 'function') {
+                                            if (window.proxyDepth < 10) {
+                                                window.proxyDepth++;
+                                                try { arg(); } catch(e) {} // Callbackleri zorla çalıştır
+                                                window.proxyDepth--;
+                                            }
                                         }
                                     }
-                                }
-                                return createDeepProxy(name + '()');
-                            },
-                            set: function() { return true; } // Atamalarda çökmemesi için (örn: videojs.Vhs.GOAL = 90)
-                        });
-                    }
+                                    return createDeepProxy(name + '()');
+                                },
+                                set: function() { return true; }
+                            });
+                        }
 
-                    // Eksik olan kütüphaneleri ($, videojs, document) sahte (Proxy) objelerle dolduruyoruz
-                    // Artık $(document).ready(...) veya videojs.Player... hata vermeyecek!
-                    window.$ = window.jQuery = createDeepProxy('$');
-                    window.videojs = createDeepProxy('videojs');
-                    window.document = createDeepProxy('document');
-                    
-                    var interceptedCode = "";
-                    var originalEval = window.eval;
-                    
-                    // Eval Hijack
-                    window.eval = function(code) {
-                        interceptedCode = code;
-                        window.eval = originalEval;
-                        return originalEval(code); // Kodu çalıştır ki değişkenler hesaplansın
-                    };
-                    
-                    // Packer scriptini başlat
-                    try {
-                        originalEval(rawScript);
-                    } catch(e) {
-                        console.log("Onemsiz Packer Hatasi (Görmezden gelinebilir): " + e.message);
-                    }
-                    
-                    // Eğer Proxy tuzağımıza URL düştüyse işlemi bitir
-                    if (window.extractedUrl) {
-                        console.log("MUKEMMEL: URL Proxy Sandigi'na dustu!");
-                        return window.extractedUrl;
-                    }
+                        // Sahte kütüphaneleri yerleştiriyoruz ($, videojs)
+                        window.$ = window.jQuery = createDeepProxy('$');
+                        window.videojs = createDeepProxy('videojs');
+                        
+                        // Orijinal eval'i gasp ediyoruz
+                        var originalEval = window.eval;
+                        window.eval = function(code) {
+                            window.eval = originalEval;
+                            return originalEval(code); // Unpacked kodu çalıştır
+                        };
+                        
+                        // Operasyonu başlat!
+                        try {
+                            originalEval(rawScript);
+                        } catch(e) {
+                            console.log("Packer çalışma detayı: " + e.message);
+                        }
+                        
+                        if (window.extractedUrl) {
+                            console.log("MUKEMMEL: URL avlandı!");
+                            return window.extractedUrl;
+                        }
 
-                    return "Error: URL bulunamadı. Proxy bos kaldi.";
-                } catch(e) { 
-                    return "Error: Fatal JS Error - " + e.message; 
-                }
-            })()
-        """.trimIndent()
+                        return "Error: URL bulunamadı. Proxy bos kaldi.";
+                    } catch(e) { 
+                        return "Error: Fatal JS Error - " + e.message; 
+                    }
+                })()
+            """.trimIndent()
 
             suspendCoroutine { cont ->
                 webView?.evaluateJavascript(jsToExecute) { result ->
