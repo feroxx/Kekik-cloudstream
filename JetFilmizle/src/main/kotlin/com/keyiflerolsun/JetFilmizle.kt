@@ -163,62 +163,107 @@ class JetFilmizle : MainAPI() {
         Log.d("JTF", "data » $data")
         val document = app.get(data).document
 
-        val iframes    = mutableListOf<String>()
-        val iframe = fixUrlNull(document.selectFirst("div#movie iframe")?.attr("data-litespeed-src")) ?: fixUrlNull(document.selectFirst("div#movie iframe")?.attr("src"))
-        Log.d("JTF", "iframe » $iframe")
-        if (iframe != null) {
-            iframes.add(iframe)
+        val iframes = mutableListOf<String>()
+
+        // 1. DÜZELTME: Selector "div#movie iframe" yerine "div#active-player iframe" yapıldı.
+        // DOM'da lazy-load (data-litespeed-src) olup olmadığını kontrol edip, yoksa normal src'yi alıyoruz.
+        val iframeElement = document.selectFirst("div#active-player iframe, div.player-container iframe")
+        val iframeSrc = iframeElement?.attr("data-litespeed-src")?.takeIf { it.isNotBlank() }
+            ?: iframeElement?.attr("src")
+
+        // Gelen src "//d2rs.com..." şeklinde protocol-relative. fixUrlNull bunu "https://d2rs.com..." yapacaktır.
+        val mainIframe = fixUrlNull(iframeSrc)
+        Log.d("JTF", "mainIframe » $mainIframe")
+
+        if (mainIframe != null) {
+            iframes.add(mainIframe)
         }
 
-        document.select("a.download-btn[href]").forEach downloadLinkForEach@{ link ->
+        // İndirme linkleri için (Önceki yazdığın kodu koruyoruz)
+        document.select("a.download-btn[href]").forEach { link ->
             val href = link.attr("href")
-            if (!href.contains("pixeldrain.com")) return@downloadLinkForEach
-            Log.d("JTF", "iframe » $iframe")
-		
-            val downloadLink = fixUrlNull(href) ?: return@downloadLinkForEach
-
-            if (iframe != null) {
-                iframes.add(downloadLink)
+            if (href.contains("pixeldrain.com")) {
+                val downloadLink = fixUrlNull(href)
+                if (downloadLink != null) {
+                    iframes.add(downloadLink)
+                }
             }
         }
 
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-        for (iframe in iframes) {
-            if (iframe.contains("d2rs")) {
-                Log.d("JTF", "jetv » $iframe")
-                val jetvDoc    = app.get(iframe).document
-                val jetvIframe = fixUrlNull(jetvDoc.selectFirst("iframe")?.attr("src")) ?: continue
-                Log.d("JTF", "jetvIframe » $jetvIframe")
+        // 2. İSİMLENDİRME DÜZELTMESİ: Karışıklığı önlemek için "iframeUrl" kullanıyoruz.
+        for (iframeUrl in iframes) {
+            if (iframeUrl.contains("d2rs")) {
+                Log.d("JTF", "d2rs url » $iframeUrl")
 
-                loadExtractor(jetvIframe, "${mainUrl}/", subtitleCallback, callback)
-            } else if (iframe.contains("jetv.xyz")) {
-                    Log.d("JTF", "jetv » $iframe")
-                    val jetvDoc    = app.get(iframe).document
-                    /*val jetvIframe = fixUrlNull(jetvDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
-                    Log.d("JTF", "jetvIframe » $jetvIframe")
-                    loadExtractor(jetvIframe, "${mainUrl}/", subtitleCallback, callback)*/
-                    val script =
-                        jetvDoc.select("script").find { it.data().contains("\"sources\": [") }
-                            ?.data()
-                            ?: ""
-                    val source = script.substringAfter("\"sources\": [").substringBefore("]")
-                        .addMarks("file").addMarks("type").addMarks("label").replace("\'", "\"")
-                    Log.d("JTF", "source -> $source")
-                    val son: Source = objectMapper.readValue(source)
-                    callback.invoke(
-                        newExtractorLink(
-                            source = "Jetv" + " - " + son.label,
-                            name = "Jetv" + " - " + son.label,
-                            url = son.file,
-                            ExtractorLinkType.M3U8
-                        ) {
-                            this. quality = Qualities.Unknown.value
-                        }
-                    )
-                    } else {
-                loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
+                // 1. URL'yi API formatına çevir (Örn: /?id=938422 -> /get_video.php?id=938422)
+                val apiUrl = iframeUrl.replace("/?", "/get_video.php?")
+
+                try {
+                    // 2. API'den JSON verisini çek
+                    val responseText = app.get(apiUrl).text
+                    Log.d("JTF", "d2rs API Response » $responseText")
+
+                    // 3. Zaten yukarıda tanımladığın objectMapper ile JSON'ı parse et
+                    val jsonNode = objectMapper.readTree(responseText)
+                    val isSuccess = jsonNode.path("success").asBoolean()
+
+                    if (isSuccess) {
+                        val masterUrl = jsonNode.path("masterUrl").asText()
+                        val referrerUrl = jsonNode.path("referrerUrl").asText()
+
+                        // 4. Doğrudan m3u8 linkini ExtractorLink olarak listeye ekle.
+                        // Sunucu korumasına takılmamak için Referer header'ını da ekliyoruz.
+                        callback.invoke(
+                            newExtractorLink(
+                                source = "D2RS",
+                                name = "D2RS",
+                                url = masterUrl,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.quality = Qualities.Unknown.value
+                                this.headers = mapOf("Referer" to referrerUrl)
+                            }
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e("JTF", "D2RS JSON Parse veya İstek Hatası: ${e.message}")
+                }
+            } else if (iframeUrl.contains("jetv.xyz")) {
+                Log.d("JTF", "jetv url » $iframeUrl")
+                val jetvDoc = app.get(iframeUrl).document
+
+                val script = jetvDoc.select("script").find { it.data().contains("\"sources\": [") }?.data() ?: ""
+
+                if (script.isNotBlank()) {
+                    val sourceString = script.substringAfter("\"sources\": [")
+                        .substringBefore("]")
+                        .addMarks("file").addMarks("type").addMarks("label")
+                        .replace("\'", "\"")
+
+                    Log.d("JTF", "source -> $sourceString")
+
+                    try {
+                        val son: Source = objectMapper.readValue(sourceString)
+                        callback.invoke(
+                            newExtractorLink(
+                                source = "Jetv - ${son.label}",
+                                name = "Jetv - ${son.label}",
+                                url = son.file,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.quality = Qualities.Unknown.value
+                            }
+                        )
+                    } catch (e: Exception) {
+                        Log.e("JTF", "JSON Parse hatası: ${e.message}")
+                    }
+                }
+            } else {
+                // Diğer tüm durumlar için (Pixeldrain vs.)
+                loadExtractor(iframeUrl, "$mainUrl/", subtitleCallback, callback)
             }
         }
 
