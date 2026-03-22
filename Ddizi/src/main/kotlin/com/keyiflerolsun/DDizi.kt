@@ -243,7 +243,7 @@ override suspend fun loadLinks(
     val fileRegex = Regex("""file:\s*["'](.*?)["']""")
     val sourcesMatch = sourcesRegex.find(jwScript.html()) ?: return false
     val fileUrl = fileRegex.find(sourcesMatch.groupValues[1])?.groupValues?.get(1) ?: return false
-
+    Log.d("fileurl", fileUrl)
     val isHls = fileUrl.contains(".m3u8")
     val quality = Regex("""label:\s*["'](.*?)["']""").find(sourcesMatch.groupValues[1])?.groupValues?.get(1) ?: "Auto"
     val videoHeaders = if (fileUrl.contains("master.txt")) {

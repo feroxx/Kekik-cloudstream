@@ -24,11 +24,11 @@ class JetFilmizle : MainAPI() {
     override val supportedTypes       = setOf(TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}"                                         to "Son Filmler",
-        "${mainUrl}/saglayici/netflix"                                 to "Netflix",
-        "${mainUrl}/gunun-kesleri"                         to "Editörün Seçimi",
-        "${mainUrl}/yerli-filmler"                  to "Türk Filmleri",
-        "${mainUrl}/diziler"                 to "Diziler",
+        mainUrl to "Son Filmler",
+        "${mainUrl}/saglayici/netflix"        to "Netflix",
+        "${mainUrl}/gunun-kesleri"            to "Editörün Seçimi",
+        "${mainUrl}/yerli-filmler"            to "Türk Filmleri",
+        "${mainUrl}/diziler"                  to "Diziler",
         "${mainUrl}/kategoriler/nette-ilkler" to "Nette İlk Filmler"
     )
 
@@ -36,32 +36,49 @@ class JetFilmizle : MainAPI() {
         val baseUrl = request.data
         val urlpage = if (page == 1) baseUrl else "$baseUrl/page/$page"
         val document = app.get(urlpage).document
-        val home     = document.select("article.movie").mapNotNull { it.toSearchResult() }
+
+        // HTML'de her bir içerik "div.film-card" sınıfına sahip bir kart içinde tutuluyor.
+        val home = document.select("div.film-card").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        var title = this.selectFirst("h2 a")?.text() ?: this.selectFirst("h3 a")?.text() ?: this.selectFirst("h4 a")?.text() ?: this.selectFirst("h5 a")?.text() ?: this.selectFirst("h6 a")?.text() ?: return null
-        title = title.substringBefore(" izle")
+        // 1. URL'yi al: İlk <a> etiketinin href'i direkt olarak içeriğe gidiyor.
+        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
 
-        val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        var posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
-        if (posterUrl == null) {
-            posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
+        // 2. Başlığı al: h2, h3 diye tek tek aramak yerine doğrudan ".card-title a" sınıfını hedefliyoruz.
+        var title = this.selectFirst(".card-title a")?.text()?.trim() ?: return null
+        // İleride başlıklarda " izle" takısı gelirse diye güvenli bir şekilde temizleyelim.
+        title = title.substringBeforeLast(" izle").trim()
+
+        // 3. Afiş URL'sini al: ".film-poster img" içinde src olarak duruyor.
+        // Ancak lazy-loading (sonradan yüklenme) durumlarına karşı önce data-src kontrolü yapmak best-practice'dir.
+        val imgElement = this.selectFirst(".film-poster img")
+        val posterUrl = fixUrlNull(
+            imgElement?.attr("data-src")?.takeIf { it.isNotBlank() }
+                ?: imgElement?.attr("src")
+        )
+
+        // 4. Senior Dokunuşu: İçerik film mi dizi mi? URL yapısından dinamik olarak tespit ediyoruz.
+        // Örnek: https://jetfilmizle.net/dizi/ejderhalar-prensi
+        val isTvSeries = href.contains("/dizi/", ignoreCase = true)
+        val tvType = if (isTvSeries) TvType.TvSeries else TvType.Movie
+
+        // Cloudstream'in yapısına uygun olarak sonucu dön.
+        return newMovieSearchResponse(title, href, tvType) {
+            this.posterUrl = posterUrl
         }
-
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.post(
-            "${mainUrl}/filmara.php",
+            "${mainUrl}/arama?q=",
             referer = "${mainUrl}/",
             data    = mapOf("s" to query)
         ).document
 
-        return document.select("article.movie").mapNotNull { it.toSearchResult() }
+        return document.select("div.film-card").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -69,22 +86,63 @@ class JetFilmizle : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title       = document.selectFirst("section.movie-exp div.movie-exp-title")?.text()?.substringBefore(" izle")?.trim() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("section.movie-exp img")?.attr("data-src")) ?: fixUrlNull(document.selectFirst("section.movie-exp img")?.attr("src"))
-        val yearDiv     = document.selectXpath("//div[@class='yap' and contains(strong, 'Vizyon') or contains(strong, 'Yapım')]").text().trim()
-        val year        = Regex("""(\d{4})""").find(yearDiv)?.groupValues?.get(1)?.toIntOrNull()
-        val description = document.selectFirst("section.movie-exp p.aciklama")?.text()?.trim()
-        val tags        = document.select("section.movie-exp div.catss a").map { it.text() }
-        val actors      = document.select("section.movie-exp div.oyuncu").map {
-            Actor(it.selectFirst("div.name")!!.text(), fixUrlNull(it.selectFirst("img")!!.attr("data-src")))
+        // 1. Başlık: Artık h1.film-title içinde.
+        // "ownText()" kullanarak içindeki orijinal adı tutan <span> etiketini dışarıda bırakıyoruz.
+        val title = document.selectFirst("h1.film-title")?.ownText()?.trim()
+            ?: document.selectFirst("h1.film-title")?.text()?.substringBefore("(")?.trim()
+            ?: return null
+
+        // 2. Afiş: Artık .film-poster sınıfına sahip.
+        val imgElement = document.selectFirst("img.film-poster")
+        val poster = fixUrlNull(
+            imgElement?.attr("data-src")?.takeIf { it.isNotBlank() }
+                ?: imgElement?.attr("src")
+        )
+
+        // 3. Yıl: Yeni HTML'de "Yapım: 2026" gibi net bir div yok.
+        // Ancak Trakt.tv linkinin sonunda (örn: ...-2026) geçiyor. Oradan çekmek çok daha güvenli.
+        // Eğer Trakt linki yoksa, fallback olarak metnin içinden ilk mantıklı yılı (Regex ile) arıyoruz.
+        val traktUrl = document.selectFirst("a.trakt")?.attr("href")
+        var year = traktUrl?.substringAfterLast("-")?.toIntOrNull()
+        if (year == null) {
+            val textMatch = Regex("""\b(19|20)\d{2}\b""").find(document.text())
+            year = textMatch?.value?.toIntOrNull()
         }
 
-        val recommendations = document.select("div#benzers article").mapNotNull {
-            var recName      = it.selectFirst("h2 a")?.text() ?: it.selectFirst("h3 a")?.text() ?: it.selectFirst("h4 a")?.text() ?: it.selectFirst("h5 a")?.text() ?: it.selectFirst("h6 a")?.text() ?: return@mapNotNull null
-            recName          = recName.substringBefore(" izle")
+        // 4. Açıklama: div.description-text içine taşınmış.
+        val description = document.selectFirst("div.description-text")?.text()?.trim()
 
-            val recHref      = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
+        // DİKKAT: Gönderdiğin HTML parçasında Etiketler, Oyuncular ve Benzer Filmler kısmı yok.
+        // Bu yüzden buradaki seçicileri genelleyerek korudum. Eğer sayfada bu kısımlar da değiştiyse,
+        // o bölümlerin HTML'ini gönderdiğinde burayı da nokta atışı güncelleyebiliriz.
+
+        val tags = document.select("div.catss a, div.film-categories a").map { it.text().trim() }
+
+        val actors = document.select("div.oyuncu, div.cast-item").mapNotNull {
+            val name = it.selectFirst("div.name, span.actor-name")?.text()?.trim() ?: return@mapNotNull null
+            val actorImg = it.selectFirst("img")
+            val actorPoster = fixUrlNull(
+                actorImg?.attr("data-src")?.takeIf { src -> src.isNotBlank() }
+                    ?: actorImg?.attr("src")
+            )
+            Actor(name, actorPoster)
+        }
+
+        // Benzer filmler için bir önceki sorunda yazdığımız getMainPage yapısını buraya da entegre ettim.
+        val recommendations = document.select("div#benzers article, div.film-card").mapNotNull {
+            var recName = it.selectFirst(".card-title a")?.text()?.trim()
+                ?: it.selectFirst("h2 a, h3 a")?.text()?.trim()
+                ?: return@mapNotNull null
+
+            recName = recName.substringBeforeLast(" izle").trim()
+
+            val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
+
+            val recImg = it.selectFirst("img")
+            val recPosterUrl = fixUrlNull(
+                recImg?.attr("data-src")?.takeIf { src -> src.isNotBlank() }
+                    ?: recImg?.attr("src")
+            )
 
             newMovieSearchResponse(recName, recHref, TvType.Movie) {
                 this.posterUrl = recPosterUrl
