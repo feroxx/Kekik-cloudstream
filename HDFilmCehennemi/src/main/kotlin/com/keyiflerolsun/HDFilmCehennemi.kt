@@ -230,7 +230,7 @@ class HDFilmCehennemi : MainAPI() {
 		Log.d("HDCH", "script » $script")
         val videoData = getAndUnpack(script).substringAfter("file_link=\"").substringBefore("\";")
 		Log.d("HDCH", "videoData » $videoData")
-        val base64Input = videoData.match(/\((\[.*?\])\)/)[1].substring(1).slice(0, -1)
+        val base64Input = videoData.substringAfter("([").substringBefore("])")
         val lastUrl = dcHello(base64Input).substringAfter("https").let { "https$it" }
         val subData   = script.substringAfter("tracks: [").substringBefore("]")
 		Log.d("HDCH", "subData » $subData")
