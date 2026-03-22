@@ -29,7 +29,7 @@ class JetFilmizle : MainAPI() {
         "${mainUrl}/gunun-kesleri"            to "Editörün Seçimi",
         "${mainUrl}/yerli-filmler"            to "Türk Filmleri",
         "${mainUrl}/diziler"                  to "Diziler",
-        "${mainUrl}/kategoriler/nette-ilkler" to "Nette İlk Filmler"
+        "${mainUrl}/nette-ilkler"             to "Nette İlk Filmler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
