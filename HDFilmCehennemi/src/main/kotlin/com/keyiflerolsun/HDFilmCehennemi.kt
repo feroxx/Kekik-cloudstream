@@ -225,7 +225,7 @@ class HDFilmCehennemi : MainAPI() {
 
         // 4. base64 decode
         val decoded = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
-        val result = decoded.toString(Charsets.UTF_8)
+        val result = decoded.toString(Charsets.ISO_8859_1)
 
         // 5. charCode çözme (EN KRİTİK KISIM)
         val unmix = StringBuilder()
