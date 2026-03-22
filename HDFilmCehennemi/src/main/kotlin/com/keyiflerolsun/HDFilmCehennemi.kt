@@ -207,23 +207,36 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-    private fun dcHello(base64Input: String): String {
-        val decodedOnce = base64Decode(base64Input)
-        val reversedString = decodedOnce.reversed()
-        val decodedTwice = base64Decode(reversedString)
+    private fun dcHello(parts: List<String>): String {
+        // 1. join
+        val joined = parts.joinToString("")
 
-        val hdchLink    = if (decodedTwice.contains("+")) {
-        decodedTwice.substringAfterLast("+")
-            } else if (decodedTwice.contains(" ")) {
-        decodedTwice.substringAfterLast(" ")
-            } else if (decodedTwice.contains("|")){
-        decodedTwice.substringAfterLast("|")
-            } else {
-        decodedTwice
+        // 2. ROT13
+        val rot = joined.map { c ->
+            when (c) {
+                in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+                in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+                else -> c
             }
-        Log.d("HDCH", "decodedTwice $decodedTwice")
-             return hdchLink
+        }.joinToString("")
+
+        // 3. reverse
+        val reversed = rot.reversed()
+
+        // 4. base64 decode
+        val decoded = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
+        val result = decoded.toString(Charsets.UTF_8)
+
+        // 5. charCode çözme (EN KRİTİK KISIM)
+        val unmix = StringBuilder()
+        for (i in result.indices) {
+            val charCode = result[i].code
+            val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
+            unmix.append(newChar.toChar())
         }
+
+        return unmix.toString()
+    }
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
@@ -231,7 +244,7 @@ class HDFilmCehennemi : MainAPI() {
         val videoData = getAndUnpack(script).substringAfter("file_link=\"").substringBefore("\";")
 		Log.d("HDCH", "videoData » $videoData")
         val base64Input = videoData.substringAfter("([").substringBefore("])")
-        val lastUrl = dcHello(base64Input).substringAfter("https").let { "https$it" }
+        val lastUrl = dcHello(Regex("\"(.*?)\"").findAll(base64Input).map { it.groupValues[1] }.toList()).substringAfter("https").let { "https$it" }
         val subData   = script.substringAfter("tracks: [").substringBefore("]")
 		Log.d("HDCH", "subData » $subData")
         AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.map {
