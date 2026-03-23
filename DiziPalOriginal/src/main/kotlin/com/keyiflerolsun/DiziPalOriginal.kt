@@ -24,7 +24,7 @@ class DiziPalOriginal : MainAPI() {
     // override var sequentialMainPageScrollDelay = 250L // ? 0.25 saniye
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/diziler/bolumler"                              to "Son Bölümler",
+        "${mainUrl}/diziler/bolumler"                  to "Son Bölümler",
         "${mainUrl}/diziler"                                       to "Yeni Diziler",
         "${mainUrl}/filmler"                                       to "Yeni Filmler",
         "${mainUrl}/platform/netflix"                              to "Netflix",
@@ -70,17 +70,17 @@ class DiziPalOriginal : MainAPI() {
             request.data,
         ).document
         val home     = if (request.data.contains("/diziler/bolumler")) {
-            document.select("div.episodes-list-grid").mapNotNull { it.sonBolumler() }
+            document.select("div.episodes-list-grid > div").mapNotNull { it.sonBolumler() }
         } else {
-            document.select("ul.content-grid").mapNotNull { it.diziler() }
+            document.select("ul.content-grid > li").mapNotNull { it.diziler() }
         }
 
         return newHomePageResponse(request.name, home, hasNext=false)
     }
 
     private fun Element.sonBolumler(): SearchResponse? {
-        val name      = this.selectFirst("div.episode-meta ep-title")?.text() ?: return null
-        val episode   = this.selectFirst("div.episode-meta ep-info")?.text()?.trim()?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
+        val name      = this.selectFirst("div.episode-meta .ep-title")?.text() ?: return null
+        val episode   = this.selectFirst("div.episode-meta .ep-info")?.text()?.trim()?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
         val title     = "$name $episode"
 
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
@@ -113,7 +113,7 @@ class DiziPalOriginal : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val responseRaw = app.post(
-            "${mainUrl}/arama?q=",
+            "${mainUrl}/ajax-search?q=",
             headers     = mapOf(
                 "Accept"           to "application/json, text/javascript, */*; q=0.01",
                 "X-Requested-With" to "XMLHttpRequest"
@@ -138,6 +138,15 @@ class DiziPalOriginal : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
+        // 1. BÖLÜM LİNKİ YÖNLENDİRMESİ (KRİTİK DÜZELTME)
+        // Eğer link "/bolum/" içeriyorsa, bunu ana dizi linkine dönüştürüyoruz.
+        // Örn: "/bolum/isim-2-sezon-6-bolum" -> "/dizi/isim"
+        if (url.contains("/bolum/")) {
+            val seriesUrl = url.replace("/bolum/", "/dizi/")
+                .replace(Regex("-\\d+-sezon.*"), "")
+            return load(seriesUrl) // Ana dizi linkiyle load fonksiyonunu baştan başlat
+        }
+
         val document = app.get(url).document
 
         val poster      = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
@@ -169,8 +178,12 @@ class DiziPalOriginal : MainAPI() {
                 this.tags      = tags
                 this.duration  = duration
             }
-        } else { 
+        } else {
+            // /film/ linkleri buraya düşer
             val title = document.selectXpath("//div[@class='g-title'][2]/div").text().trim()
+
+            // Eğer film başlığı da boş gelirse sessizce çökmesin, null dönsün
+            if (title.isEmpty()) return null
 
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
