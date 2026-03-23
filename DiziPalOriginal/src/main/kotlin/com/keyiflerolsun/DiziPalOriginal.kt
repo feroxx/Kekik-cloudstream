@@ -113,7 +113,7 @@ class DiziPalOriginal : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val responseRaw = app.post(
-            "${mainUrl}/api/search-autocomplete",
+            "${mainUrl}/arama?q=",
             headers     = mapOf(
                 "Accept"           to "application/json, text/javascript, */*; q=0.01",
                 "X-Requested-With" to "XMLHttpRequest"
@@ -144,7 +144,6 @@ class DiziPalOriginal : MainAPI() {
         val year        = document.selectXpath("//div[text()='Yapım Yılı']//following-sibling::div").text().trim().toIntOrNull()
         val description = document.selectFirst("div.summary p")?.text()?.trim()
         val tags        = document.selectXpath("//div[text()='Türler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
-        val rating      = document.selectXpath("//div[text()='IMDB Puanı']//following-sibling::div").text().trim().toRatingInt()
         val duration    = Regex("(\\d+)").find(document.selectXpath("//div[text()='Ortalama Süre']//following-sibling::div").text())?.value?.toIntOrNull()
 
         if (url.contains("/dizi/")) {
@@ -168,7 +167,6 @@ class DiziPalOriginal : MainAPI() {
                 this.year      = year
                 this.plot      = description
                 this.tags      = tags
-                this.rating    = rating
                 this.duration  = duration
             }
         } else { 
@@ -179,7 +177,6 @@ class DiziPalOriginal : MainAPI() {
                 this.year      = year
                 this.plot      = description
                 this.tags      = tags
-                this.rating    = rating
                 this.duration  = duration
             }
         }
@@ -188,9 +185,9 @@ class DiziPalOriginal : MainAPI() {
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("DZP", "data » $data")
         val document = app.get(data).document
-        val iframe   = document.selectFirst(".playerContent iframe")?.attr("src")?.substringBefore("#") : document.selectFirst("div#vast_new iframe")?.attr("src") ?: return false
+        val iframe   = document.selectFirst(".playerContent iframe")?.attr("src")?.substringBefore("#") ?: return false
         Log.d("DZP", "iframe » $iframe")
-        val newUrl = iframe?.let { "https://imagestoo.com/player/index.php?data=${it.substringAfterLast("/")}&do=getVideo" }
+        val newUrl = iframe.let { "https://imagestoo.com/player/index.php?data=${it.substringAfterLast("/")}&do=getVideo" }
 
         val iSource = app.get(newUrl, referer="${iframe}/").text
         val m3uLink = try { JSONObject(iSource).getString("videoSource") } catch (e: Exception) { null }
@@ -227,14 +224,15 @@ class DiziPalOriginal : MainAPI() {
         }
 
         callback.invoke(
-            ExtractorLink(
+            newExtractorLink(
                 source  = this.name,
                 name    = this.name,
                 url     = m3uLink,
-                referer = "${mainUrl}/",
-                quality = Qualities.Unknown.value,
-                isM3u8  = true
-            )
+                type = ExtractorLinkType.M3U8
+            ) {
+                referer = "${mainUrl}/"
+                quality = Qualities.Unknown.value
+            }
         )
 
         // M3u8Helper.generateM3u8(
