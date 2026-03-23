@@ -12,7 +12,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 
 class DiziPalOriginal : MainAPI() {
     override var mainUrl              = "https://dizipal2036.com"
-    override var name                 = "DiziPal"
+    override var name                 = "DiziPalOriginal"
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = true
