@@ -138,62 +138,78 @@ class DiziPalOriginal : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        // 1. BÖLÜM LİNKİ YÖNLENDİRMESİ (KRİTİK DÜZELTME)
-        // Eğer link "/bolum/" içeriyorsa, bunu ana dizi linkine dönüştürüyoruz.
-        // Örn: "/bolum/isim-2-sezon-6-bolum" -> "/dizi/isim"
-        if (url.contains("/bolum/")) {
-            val seriesUrl = url.replace("/bolum/", "/dizi/")
-                .replace(Regex("-\\d+-sezon.*"), "")
-            return load(seriesUrl) // Ana dizi linkiyle load fonksiyonunu baştan başlat
+    // 1. BÖLÜM LİNKİ YÖNLENDİRMESİ
+    if (url.contains("/bolum/")) {
+        val seriesUrl = url.replace("/bolum/", "/dizi/")
+            .replace(Regex("-\\d+-sezon.*"), "")
+        return load(seriesUrl)
+    }
+
+    val document = app.get(url).document
+
+    // Genel Meta Bilgileri
+    val poster = fixUrlNull(document.selectFirst("meta[property=og:image]")?.attr("content"))
+    
+    // .info-row içindeki span yapısından veriyi çekiyoruz
+    val year = document.selectFirst("div.info-row:contains(Yıl) span.info-value")?.text()?.trim()?.toIntOrNull()
+    val description = document.selectFirst("p.series-description")?.text()?.trim()
+    
+    // "Kategoriler" altındaki tüm <a> tag'lerini çekip listeye çeviriyoruz
+    val tags = document.select("div.info-row:contains(Kategoriler) span.info-value.categories a").map { it.text().trim() }
+    
+    // HTML'de süre bilgisi mevcut değil, gelirse diye hazırlıklı bırakıyorum:
+    // val durationText = document.selectFirst("div.info-row:contains(Süre) span.info-value")?.text()
+    // val duration = Regex("(\\d+)").find(durationText ?: "")?.value?.toIntOrNull()
+    val duration: Int? = null 
+
+    if (url.contains("/dizi/")) {
+        // Yeni DOM yapısında başlık h1 tag'inde class ile tutuluyor
+        val title = document.selectFirst("h1.series-title")?.text()?.trim() ?: return null
+
+        val episodes = document.select("div.detail-episode-item-wrap").mapNotNull { wrap ->
+            val anchor = wrap.selectFirst("a.detail-episode-item") ?: return@mapNotNull null
+            val epHref = fixUrlNull(anchor.attr("href")) ?: return@mapNotNull null
+            val epName = anchor.selectFirst("div.detail-episode-title")?.text()?.trim() ?: return@mapNotNull null
+            
+            // Format: "1. Sezon 1. Bölüm" -> Regex ile güvenli parse işlemi
+            val subtitle = anchor.selectFirst("div.detail-episode-subtitle")?.text()?.trim() ?: ""
+            val match = Regex("""(\d+)\.\s*[Ss]ezon\s*(\d+)\.\s*[Bb]ölüm""").find(subtitle)
+            
+            val epSeason = match?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val epEpisode = match?.groupValues?.getOrNull(2)?.toIntOrNull()
+
+            newEpisode(epHref) {
+                this.name    = epName
+                this.episode = epEpisode
+                this.season  = epSeason
+            }
         }
 
-        val document = app.get(url).document
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            this.posterUrl = poster
+            this.year      = year
+            this.plot      = description
+            this.tags      = tags
+            this.duration  = duration
+        }
+    } else {
+        // Film detay sayfası HTML'i elimizde olmadığı için en olası selector'ları fallback ile yazdım.
+        // Gerekirse og:title meta tag'inden de çekebilirsin.
+        val title = document.selectFirst("h1.series-title, h1.movie-title")?.text()?.trim() 
+            ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.substringBefore(" izle")?.trim() 
+            ?: ""
 
-        val poster      = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
-        val year        = document.selectXpath("//div[text()='Yapım Yılı']//following-sibling::div").text().trim().toIntOrNull()
-        val description = document.selectFirst("div.summary p")?.text()?.trim()
-        val tags        = document.selectXpath("//div[text()='Türler']//following-sibling::div").text().trim().split(" ").map { it.trim() }
-        val duration    = Regex("(\\d+)").find(document.selectXpath("//div[text()='Ortalama Süre']//following-sibling::div").text())?.value?.toIntOrNull()
+        if (title.isEmpty()) return null
 
-        if (url.contains("/dizi/")) {
-            val title       = document.selectFirst("div.cover h5")?.text() ?: return null
-
-            val episodes    = document.select("div.episode-item").mapNotNull {
-                val epName    = it.selectFirst("div.name")?.text()?.trim() ?: return@mapNotNull null
-                val epHref    = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-                val epEpisode = it.selectFirst("div.episode")?.text()?.trim()?.split(" ")?.get(2)?.replace(".", "")?.toIntOrNull()
-                val epSeason  = it.selectFirst("div.episode")?.text()?.trim()?.split(" ")?.get(0)?.replace(".", "")?.toIntOrNull()
-
-                newEpisode(epHref) {
-                    this.name    = epName
-                    this.episode = epEpisode
-                    this.season  = epSeason
-                }
-            }
-
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster
-                this.year      = year
-                this.plot      = description
-                this.tags      = tags
-                this.duration  = duration
-            }
-        } else {
-            // /film/ linkleri buraya düşer
-            val title = document.selectXpath("//div[@class='g-title'][2]/div").text().trim()
-
-            // Eğer film başlığı da boş gelirse sessizce çökmesin, null dönsün
-            if (title.isEmpty()) return null
-
-            return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.year      = year
-                this.plot      = description
-                this.tags      = tags
-                this.duration  = duration
-            }
+        return newMovieLoadResponse(title, url, TvType.Movie, url) {
+            this.posterUrl = poster
+            this.year      = year
+            this.plot      = description
+            this.tags      = tags
+            this.duration  = duration
         }
     }
+}
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("DZP", "data » $data")
