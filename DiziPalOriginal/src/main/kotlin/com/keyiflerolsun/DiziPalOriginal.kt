@@ -238,65 +238,95 @@ class DiziPalOriginal : MainAPI() {
     }
 }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("DZP", "data » $data")
-        val document = app.get(data).document
-        val iframe   = document.selectFirst(".playerContent iframe")?.attr("src")?.substringBefore("#") ?: return false
-        Log.d("DZP", "iframe » $iframe")
-        val newUrl = iframe.let { "https://imagestoo.com/player/index.php?data=${it.substringAfterLast("/")}&do=getVideo" }
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("DZP", "Oynatılacak Bölüm Linki » $data")
 
-        val iSource = app.get(newUrl, referer="${iframe}/").text
-        val m3uLink = try { JSONObject(iSource).getString("videoSource") } catch (e: Exception) { null }
-        if (m3uLink == null) {
-            Log.d("DZP", "iSource » $iSource")
-            return loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
+        // 1. AŞAMA: Player Config'ini Al
+        // Sunucu hangi bölüm olduğunu Referer'dan anlıyor
+        val configResponseRaw = app.get(
+            url = "$mainUrl/ajax-player-config",
+            referer = data,
+            headers = mapOf(
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With" to "XMLHttpRequest"
+            )
+        ).text
+
+        // JSON'dan embed linkini yakala (v parametresi)
+        val embedUrlRaw = Regex(""""v"\s*:\s*"([^"]+)"""").find(configResponseRaw)?.groupValues?.getOrNull(1)
+            ?.replace("\\/", "/") // JSON escape'lerini temizle
+
+        if (embedUrlRaw.isNullOrEmpty()) {
+            Log.e("DZP", "Embed URL config'den alınamadı! Dönen yanıt: $configResponseRaw")
+            return false
         }
 
-        val subtitles = Regex(""""subtitle":"([^"]+)""").find(iSource)?.groupValues?.get(1)
-        if (subtitles != null) {
-            if (subtitles.contains(",")) {
-                subtitles.split(",").forEach {
-                    val subLang = it.substringAfter("[").substringBefore("]")
-                    val subUrl  = it.replace("[${subLang}]", "")
+        val embedUrl = fixUrl(embedUrlRaw)
+        Log.d("DZP", "Çözülen Embed URL » $embedUrl")
 
-                    subtitleCallback.invoke(
-                        SubtitleFile(
-                            lang = subLang,
-                            url  = fixUrl(subUrl)
-                        )
-                    )
-                }
-            } else {
-                val subLang = subtitles.substringAfter("[").substringBefore("]")
-                val subUrl  = subtitles.replace("[${subLang}]", "")
+        // 2. AŞAMA: Embed Sayfasına Git ve JWPlayer Verilerini Ayıkla
+        val embedSource = app.get(embedUrl, referer = data).text
 
-                subtitleCallback.invoke(
-                    SubtitleFile(
-                        lang = subLang,
-                        url  = fixUrl(subUrl)
-                    )
-                )
-            }
+        // M3U8 Dosyasını Yakala
+        val m3u8Match = Regex("""sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
+            ?: Regex("""file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
+
+        val m3u8Url = m3u8Match?.groupValues?.getOrNull(1)
+
+        if (m3u8Url == null) {
+            Log.e("DZP", "Embed kaynağında M3U8 bulunamadı!")
+            return false
         }
 
+        Log.d("DZP", "Bulunan M3U8 » $m3u8Url")
+
+        // Linki Cloudstream oynatıcısına gönder
         callback.invoke(
             newExtractorLink(
-                source  = this.name,
-                name    = this.name,
-                url     = m3uLink,
+                source = this.name,
+                name = "Dizipal (Original)",
+                url = m3u8Url,
                 type = ExtractorLinkType.M3U8
             ) {
-                referer = "${mainUrl}/"
+                referer = embedUrl // Stream host'u referrer olarak kendi HTML sayfasını (wtsdde.cfd) isteyecektir
                 quality = Qualities.Unknown.value
             }
         )
 
-        // M3u8Helper.generateM3u8(
-        //     source    = this.name,
-        //     name      = this.name,
-        //     streamUrl = m3uLink,
-        //     referer   = "${mainUrl}/"
-        // ).forEach(callback)
+        // 3. AŞAMA: Altyazıları (Tracks) Yakala ve Parse Et
+        // JWPlayer setup içindeki tracks array'ini blok olarak alıyoruz
+        val tracksBlockMatch = Regex("""tracks\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(embedSource)
+
+        tracksBlockMatch?.groupValues?.getOrNull(1)?.let { tracksBlock ->
+            // Her bir { file: "...", label: "..." } objesini tek tek bul
+            val trackItemRegex = Regex("""\{(.*?)\}""", RegexOption.DOT_MATCHES_ALL)
+
+            trackItemRegex.findAll(tracksBlock).forEach { itemMatch ->
+                val itemStr = itemMatch.groupValues[1]
+
+                // Obje içinden file ve label'ı çıkart
+                val fileMatch = Regex("""file\s*:\s*["']([^"']+)["']""").find(itemStr)
+                val labelMatch = Regex("""label\s*:\s*["']([^"']+)["']""").find(itemStr)
+
+                val fileUrl = fileMatch?.groupValues?.getOrNull(1)
+                val label = labelMatch?.groupValues?.getOrNull(1) ?: "Unknown"
+
+                // Sadece geçerli vtt dosyalarını altyazı olarak ekle
+                if (fileUrl != null && (fileUrl.endsWith(".vtt") || fileUrl.endsWith(".srt"))) {
+                    subtitleCallback.invoke(
+                        SubtitleFile(
+                            lang = label,
+                            url = fixUrl(fileUrl)
+                        )
+                    )
+                }
+            }
+        }
 
         return true
     }
