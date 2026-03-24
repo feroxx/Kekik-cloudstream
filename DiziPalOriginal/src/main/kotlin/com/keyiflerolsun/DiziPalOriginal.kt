@@ -246,21 +246,34 @@ class DiziPalOriginal : MainAPI() {
     ): Boolean {
         Log.d("DZP", "Oynatılacak Bölüm Linki » $data")
 
-        // 1. AŞAMA: Player Config'ini Al
-        // Sunucu hangi bölüm olduğunu Referer'dan anlıyor
+        // 1. AŞAMA: Bölüm sayfasından Player Hash'ini (data-cfg) al
+        val document = app.get(data).document
+        val configToken = document.selectFirst("#videoContainer")?.attr("data-cfg")
+
+        if (configToken.isNullOrEmpty()) {
+            Log.e("DZP", "Sayfadan video config token'ı (data-cfg) alınamadı! DOM değişmiş olabilir.")
+            return false
+        }
+
+        Log.d("DZP", "Bulunan Token » $configToken")
+
+        // 2. AŞAMA: Token'ı API'ye Form Data olarak POST et
         val configResponseRaw = app.post(
             url = "$mainUrl/ajax-player-config",
             headers = mapOf(
-                "Accept"           to "application/json, text/javascript, */*; q=0.01",
+                "Accept"           to "*/*",
+                "Content-Type"     to "application/x-www-form-urlencoded",
                 "X-Requested-With" to "XMLHttpRequest"
             ),
             referer = data,
-            data = emptyMap<String, String>()
+            data = mapOf("cfg" to configToken)
         ).text
+
+        Log.d("DZP", "API Yanıtı » $configResponseRaw")
 
         // JSON'dan embed linkini yakala (v parametresi)
         val embedUrlRaw = Regex(""""v"\s*:\s*"([^"]+)"""").find(configResponseRaw)?.groupValues?.getOrNull(1)
-            ?.replace("\\/", "/") // JSON escape'lerini temizle
+            ?.replace("\\/", "/")
 
         if (embedUrlRaw.isNullOrEmpty()) {
             Log.e("DZP", "Embed URL config'den alınamadı! Dönen yanıt: $configResponseRaw")
@@ -270,10 +283,9 @@ class DiziPalOriginal : MainAPI() {
         val embedUrl = fixUrl(embedUrlRaw)
         Log.d("DZP", "Çözülen Embed URL » $embedUrl")
 
-        // 2. AŞAMA: Embed Sayfasına Git ve JWPlayer Verilerini Ayıkla
+        // 3. AŞAMA: Embed Sayfasına Git ve JWPlayer Verilerini Ayıkla
         val embedSource = app.get(embedUrl, referer = data).text
 
-        // M3U8 Dosyasını Yakala
         val m3u8Match = Regex("""sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
             ?: Regex("""file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
 
@@ -286,7 +298,6 @@ class DiziPalOriginal : MainAPI() {
 
         Log.d("DZP", "Bulunan M3U8 » $m3u8Url")
 
-        // Linki Cloudstream oynatıcısına gönder
         callback.invoke(
             newExtractorLink(
                 source = this.name,
@@ -294,30 +305,26 @@ class DiziPalOriginal : MainAPI() {
                 url = m3u8Url,
                 type = ExtractorLinkType.M3U8
             ) {
-                referer = embedUrl // Stream host'u referrer olarak kendi HTML sayfasını (wtsdde.cfd) isteyecektir
+                referer = embedUrl
                 quality = Qualities.Unknown.value
             }
         )
 
-        // 3. AŞAMA: Altyazıları (Tracks) Yakala ve Parse Et
-        // JWPlayer setup içindeki tracks array'ini blok olarak alıyoruz
+        // 4. AŞAMA: Altyazıları (Tracks) Yakala
         val tracksBlockMatch = Regex("""tracks\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(embedSource)
 
         tracksBlockMatch?.groupValues?.getOrNull(1)?.let { tracksBlock ->
-            // Her bir { file: "...", label: "..." } objesini tek tek bul
             val trackItemRegex = Regex("""\{(.*?)\}""", RegexOption.DOT_MATCHES_ALL)
 
             trackItemRegex.findAll(tracksBlock).forEach { itemMatch ->
                 val itemStr = itemMatch.groupValues[1]
 
-                // Obje içinden file ve label'ı çıkart
                 val fileMatch = Regex("""file\s*:\s*["']([^"']+)["']""").find(itemStr)
                 val labelMatch = Regex("""label\s*:\s*["']([^"']+)["']""").find(itemStr)
 
                 val fileUrl = fileMatch?.groupValues?.getOrNull(1)
                 val label = labelMatch?.groupValues?.getOrNull(1) ?: "Unknown"
 
-                // Sadece geçerli vtt dosyalarını altyazı olarak ekle
                 if (fileUrl != null && (fileUrl.endsWith(".vtt") || fileUrl.endsWith(".srt"))) {
                     subtitleCallback.invoke(
                         SubtitleFile(
