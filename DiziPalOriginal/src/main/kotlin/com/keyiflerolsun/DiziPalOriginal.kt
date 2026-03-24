@@ -248,13 +248,13 @@ class DiziPalOriginal : MainAPI() {
 
         // 1. AŞAMA: Player Config'ini Al
         // Sunucu hangi bölüm olduğunu Referer'dan anlıyor
-        val configResponseRaw = app.get(
+        val configResponseRaw = app.post(
             url = "$mainUrl/ajax-player-config",
-            referer = data,
             headers = mapOf(
-                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "Accept"           to "application/json, text/javascript, */*; q=0.01",
                 "X-Requested-With" to "XMLHttpRequest"
-            )
+            ),
+            referer = data,
         ).text
 
         // JSON'dan embed linkini yakala (v parametresi)
