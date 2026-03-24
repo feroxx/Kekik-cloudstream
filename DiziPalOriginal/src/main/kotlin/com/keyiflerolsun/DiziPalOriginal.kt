@@ -255,6 +255,7 @@ class DiziPalOriginal : MainAPI() {
                 "X-Requested-With" to "XMLHttpRequest"
             ),
             referer = data,
+            data = emptyMap<String, String>()
         ).text
 
         // JSON'dan embed linkini yakala (v parametresi)
