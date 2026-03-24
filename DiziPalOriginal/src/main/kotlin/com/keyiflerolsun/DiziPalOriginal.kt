@@ -246,38 +246,46 @@ class DiziPalOriginal : MainAPI() {
     ): Boolean {
         Log.d("DZP", "Oynatılacak Bölüm Linki » $data")
 
-        // 1. AŞAMA: Bölüm sayfasından Player Hash'ini al (Önbelleği baypas ederek!)
-        // Cloudstream'in eski (süresi geçmiş) token getirmesini engellemek için cache-control ekliyoruz
-        val document = app.get(
+        // Sunucunun bizi bot sanmaması ve iki isteği eşleştirebilmesi için sabit bir User-Agent
+        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+        // 1. AŞAMA: GET isteği atıp hem Token'ı hem de ÇEREZLERİ alıyoruz
+        val getResponse = app.get(
             url = data,
             headers = mapOf(
+                "User-Agent"    to userAgent,
                 "Cache-Control" to "no-cache",
                 "Pragma"        to "no-cache"
             )
-        ).document
+        )
 
-        // .trim() hayat kurtarır, HTML içindeki görünmez boşlukları temizleriz
+        val document = getResponse.document
         val configToken = document.selectFirst("#videoContainer")?.attr("data-cfg")?.trim()
 
         if (configToken.isNullOrEmpty()) {
-            Log.e("DZP", "Sayfadan video config token'ı (data-cfg) alınamadı! DOM değişmiş olabilir.")
+            Log.e("DZP", "Sayfadan video config token'ı (data-cfg) alınamadı!")
             return false
         }
 
-        Log.d("DZP", "Bulunan Taze Token » $configToken")
+        // KRİTİK NOKTA: Sunucunun verdiği çerezleri (PHPSESSID, _ct vb.) tek bir string'de birleştiriyoruz
+        val cookies = getResponse.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
 
-        // 2. AŞAMA: Token'ı API'ye Form Data olarak POST et
+        Log.d("DZP", "Bulunan Token » $configToken")
+        Log.d("DZP", "Yakalanan Çerezler » $cookies")
+
+        // 2. AŞAMA: Token'ı API'ye Çerezlerle (Cookies) birlikte POST et
         val configResponseRaw = app.post(
             url = "$mainUrl/ajax-player-config",
             headers = mapOf(
+                "User-Agent"       to userAgent,
                 "Accept"           to "*/*",
                 "Content-Type"     to "application/x-www-form-urlencoded",
                 "X-Requested-With" to "XMLHttpRequest",
-                "Origin"           to mainUrl, // Sunucunun CSRF korumasını aşmak için gerekli
-                "Cache-Control"    to "no-cache"
+                "Origin"           to mainUrl,
+                "Cookie"           to cookies // Yakaladığımız oturumu buraya basıyoruz
             ),
             referer = data,
-            data = mapOf("cfg" to configToken)
+            data = mapOf("cfg" to configToken) // '=' işareti burada otomatik eklenir
         ).text
 
         Log.d("DZP", "API Yanıtı » $configResponseRaw")
@@ -295,7 +303,11 @@ class DiziPalOriginal : MainAPI() {
         Log.d("DZP", "Çözülen Embed URL » $embedUrl")
 
         // 3. AŞAMA: Embed Sayfasına Git ve JWPlayer Verilerini Ayıkla
-        val embedSource = app.get(embedUrl, referer = data).text
+        val embedSource = app.get(
+            url = embedUrl,
+            referer = data,
+            headers = mapOf("User-Agent" to userAgent)
+        ).text
 
         val m3u8Match = Regex("""sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
             ?: Regex("""file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
