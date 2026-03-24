@@ -11,7 +11,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 class DiziPalOriginal : MainAPI() {
-    override var mainUrl              = "https://dizipal2036.com"
+    override var mainUrl              = "https://dizipal2037.com"
     override var name                 = "DiziPalOriginal"
     override val hasMainPage          = true
     override var lang                 = "tr"
@@ -99,37 +99,64 @@ class DiziPalOriginal : MainAPI() {
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
 
-    private fun SearchItem.toPostSearchResult(): SearchResponse {
-        val title     = this.title
-        val href      = "${mainUrl}${this.url}"
-        val posterUrl = this.poster
+    private fun DizipalSearchResult.toPostSearchResult(): SearchResponse? {
+        // Zorunlu alanların kontrolü (Early return)
+        val title = this.title ?: return null
+        val href  = this.url ?: return null
 
-        return if (this.type == "series") {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        return if (this.type.equals("Dizi", ignoreCase = true)) {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                this.posterUrl = this@toPostSearchResult.poster
+                this.year      = this@toPostSearchResult.year
+            }
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                this.posterUrl = this@toPostSearchResult.poster
+                this.year      = this@toPostSearchResult.year
+            }
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val responseRaw = app.post(
-            "${mainUrl}/ajax-search?q=",
-            headers     = mapOf(
-                "Accept"           to "application/json, text/javascript, */*; q=0.01",
+        // Arama URL'sini doğrudan parametre ile oluşturuyoruz
+        val searchUrl = "$mainUrl/ajax-search?q=$query"
+
+        val responseRaw = app.get(
+            searchUrl,
+            headers = mapOf(
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
                 "X-Requested-With" to "XMLHttpRequest"
             ),
-            referer     = "${mainUrl}/",
-            data        = mapOf(
-                "query" to query
-            )
+            referer = "$mainUrl/"
         )
 
-        val searchItemsMap = jacksonObjectMapper().readValue<Map<String, SearchItem>>(responseRaw.text)
+        // JSON'ı yeni data class yapımızla parse ediyoruz
+        val jsonResponse = AppUtils.parseJson<DizipalSearchData>(responseRaw.text)
 
         val searchResponses = mutableListOf<SearchResponse>()
 
-        for ((_, searchItem) in searchItemsMap) {
-            searchResponses.add(searchItem.toPostSearchResult())
+        // Eğer results null dönerse veya boşsa güvenli şekilde geçiyoruz
+        jsonResponse.results?.forEach { item ->
+            val title = item.title ?: return@forEach
+            val url = item.url ?: return@forEach
+            val poster = item.poster
+
+            // Dizi mi Film mi olduğunu API'den gelen "type" alanına göre belirliyoruz
+            if (item.type == "Dizi") {
+                searchResponses.add(
+                    newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
+                        this.posterUrl = poster
+                        this.year = item.year
+                    }
+                )
+            } else {
+                searchResponses.add(
+                    newMovieSearchResponse(title, url, TvType.Movie) {
+                        this.posterUrl = poster
+                        this.year = item.year
+                    }
+                )
+            }
         }
 
         return searchResponses
