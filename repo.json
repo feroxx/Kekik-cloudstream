@@ -1,8 +1,8 @@
 {
-    "name": "Turkish Providers Repository | @feroxxcs",
+    "name": "Turkish Providers Repository | @patr0n",
     "description": "Türkçe içerikli eklenti havuzu",
     "manifestVersion": 1,
     "pluginLists": [
-      "https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/builds/plugins.json"
+      "https://raw.githubusercontent.com/patr0nq/Kekik-cloudstream/master/builds/plugins.json"
     ]
 }
