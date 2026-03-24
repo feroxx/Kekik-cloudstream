@@ -246,16 +246,25 @@ class DiziPalOriginal : MainAPI() {
     ): Boolean {
         Log.d("DZP", "Oynatılacak Bölüm Linki » $data")
 
-        // 1. AŞAMA: Bölüm sayfasından Player Hash'ini (data-cfg) al
-        val document = app.get(data).document
-        val configToken = document.selectFirst("#videoContainer")?.attr("data-cfg")
+        // 1. AŞAMA: Bölüm sayfasından Player Hash'ini al (Önbelleği baypas ederek!)
+        // Cloudstream'in eski (süresi geçmiş) token getirmesini engellemek için cache-control ekliyoruz
+        val document = app.get(
+            url = data,
+            headers = mapOf(
+                "Cache-Control" to "no-cache",
+                "Pragma"        to "no-cache"
+            )
+        ).document
+
+        // .trim() hayat kurtarır, HTML içindeki görünmez boşlukları temizleriz
+        val configToken = document.selectFirst("#videoContainer")?.attr("data-cfg")?.trim()
 
         if (configToken.isNullOrEmpty()) {
             Log.e("DZP", "Sayfadan video config token'ı (data-cfg) alınamadı! DOM değişmiş olabilir.")
             return false
         }
 
-        Log.d("DZP", "Bulunan Token » $configToken")
+        Log.d("DZP", "Bulunan Taze Token » $configToken")
 
         // 2. AŞAMA: Token'ı API'ye Form Data olarak POST et
         val configResponseRaw = app.post(
@@ -263,7 +272,9 @@ class DiziPalOriginal : MainAPI() {
             headers = mapOf(
                 "Accept"           to "*/*",
                 "Content-Type"     to "application/x-www-form-urlencoded",
-                "X-Requested-With" to "XMLHttpRequest"
+                "X-Requested-With" to "XMLHttpRequest",
+                "Origin"           to mainUrl, // Sunucunun CSRF korumasını aşmak için gerekli
+                "Cache-Control"    to "no-cache"
             ),
             referer = data,
             data = mapOf("cfg" to configToken)
@@ -301,7 +312,7 @@ class DiziPalOriginal : MainAPI() {
         callback.invoke(
             newExtractorLink(
                 source = this.name,
-                name = "Dizipal (Original)",
+                name = "Dizipal (Ana Sunucu)",
                 url = m3u8Url,
                 type = ExtractorLinkType.M3U8
             ) {
