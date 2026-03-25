@@ -73,7 +73,7 @@ class AltiYuzAltmisAltiFilmIzle : MainAPI() {
         Log.d("666FilmIzle", "data » $data")
         val document = app.get(data).document
 
-        // Alpine.js loads sources dynamically using data-frame attribute
+        
         document.select("button.player-sources__btn").forEach { button ->
             val iframeSrc = button.attr("data-frame")
             if (iframeSrc.isNotBlank()) {
@@ -101,7 +101,7 @@ class AltiYuzAltmisAltiFilmIzle : MainAPI() {
             }
         }
 
-        // Fallback checks
+        
         document.select("div.player-content iframe, iframe").forEach { iframe ->
             val iframeSrc = iframe.attr("src")
             if (iframeSrc.isNotBlank() && !iframeSrc.contains("youtube")) {
