@@ -17,32 +17,44 @@ class BelgeselX : MainAPI() {
     override val supportedTypes       = setOf(TvType.Documentary)
 	
     override val mainPage = mainPageOf(
-        "${mainUrl}/konu/turk-tarihi-belgeselleri&page=" to "Türk Tarihi",
-        "${mainUrl}/konu/tarih-belgeselleri&page="		 to "Tarih",
-        "${mainUrl}/konu/seyehat-belgeselleri&page="	 to "Seyahat",
-        "${mainUrl}/konu/seri-belgeseller&page="		 to "Seri",
-        "${mainUrl}/konu/savas-belgeselleri&page="		 to "Savaş",
-        "${mainUrl}/konu/sanat-belgeselleri&page="		 to "Sanat",
-        "${mainUrl}/konu/psikoloji-belgeselleri&page="	 to "Psikoloji",
-        "${mainUrl}/konu/polisiye-belgeselleri&page="	 to "Polisiye",
-        "${mainUrl}/konu/otomobil-belgeselleri&page="	 to "Otomobil",
-        "${mainUrl}/konu/nazi-belgeselleri&page="		 to "Nazi",
-        "${mainUrl}/konu/muhendislik-belgeselleri&page=" to "Mühendislik",
-        "${mainUrl}/konu/kultur-din-belgeselleri&page="	 to "Kültür Din",
-        "${mainUrl}/konu/kozmik-belgeseller&page="		 to "Kozmik",
-        "${mainUrl}/konu/hayvan-belgeselleri&page="		 to "Hayvan",
-        "${mainUrl}/konu/eski-tarih-belgeselleri&page="	 to "Eski Tarih",
-        "${mainUrl}/konu/egitim-belgeselleri&page="		 to "Eğitim",
-        "${mainUrl}/konu/dunya-belgeselleri&page="		 to "Dünya",
-        "${mainUrl}/konu/doga-belgeselleri&page="		 to "Doğa",
-        "${mainUrl}/konu/bilim-belgeselleri&page="		 to "Bilim"
+        "${mainUrl}/konu/turk-tarihi-belgeselleri" to "Türk Tarihi",
+        "${mainUrl}/konu/tarih-belgeselleri"	   to "Tarih",
+        "${mainUrl}/konu/seyehat-belgeselleri"	   to "Seyahat",
+        "${mainUrl}/konu/seri-belgeseller"		   to "Seri",
+        "${mainUrl}/konu/savas-belgeselleri"	   to "Savaş",
+        "${mainUrl}/konu/sanat-belgeselleri"	   to "Sanat",
+        "${mainUrl}/konu/psikoloji-belgeselleri"   to "Psikoloji",
+        "${mainUrl}/konu/polisiye-belgeselleri"	   to "Polisiye",
+        "${mainUrl}/konu/otomobil-belgeselleri"	   to "Otomobil",
+        "${mainUrl}/konu/nazi-belgeselleri"		   to "Nazi",
+        "${mainUrl}/konu/muhendislik-belgeselleri" to "Mühendislik",
+        "${mainUrl}/konu/kultur-din-belgeselleri"  to "Kültür Din",
+        "${mainUrl}/konu/kozmik-belgeseller"	   to "Kozmik",
+        "${mainUrl}/konu/hayvan-belgeselleri"	   to "Hayvan",
+        "${mainUrl}/konu/eski-tarih-belgeselleri"  to "Eski Tarih",
+        "${mainUrl}/konu/egitim-belgeselleri"	   to "Eğitim",
+        "${mainUrl}/konu/dunya-belgeselleri"	   to "Dünya",
+        "${mainUrl}/konu/doga-belgeselleri"		   to "Doğa",
+        "${mainUrl}/konu/bilim-belgeselleri"	   to "Bilim"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}${page}", cacheTime = 60).document
-        val home     = document.select("div.gen-movie-contain > div.gen-info-contain > div.gen-movie-info").mapNotNull { it.toSearchResult() }
+        // 1. Sayfa dinamik olarak oluşturuluyor
+        val url = if (page == 1) {
+            request.data
+        } else {
+            val categorySlug = request.data.removeSuffix("/").substringAfterLast("/")
 
-        return newHomePageResponse(request.name, home)
+            "https://belgeselx.com/ajax_konukat.php?url=$categorySlug&page=$page"
+        }
+
+        val document = app.get(url, cacheTime = 60).document
+
+        val home = document.select("div.px-grid > a.px-card").mapNotNull { it.toSearchResult() }
+
+        val parsedItems = home.ifEmpty { document.select("a.px-card").mapNotNull { it.toSearchResult() } }
+
+        return newHomePageResponse(request.name, parsedItems)
     }
 
     private fun String.toTitleCase(): String {
@@ -53,11 +65,16 @@ class BelgeselX : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("div.gen-movie-info > h3 a")?.text()?.trim()?.toTitleCase() ?: return null
-        val href      = fixUrlNull(this.selectFirst("div.gen-movie-info > h3 a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.parent()?.parent()?.selectFirst("div.gen-movie-img > img")?.attr("src"))
 
-        return newTvSeriesSearchResponse(title, href, TvType.Documentary) { this.posterUrl = posterUrl }
+        val title = this.selectFirst(".px-card-title")?.text()?.trim()?.toTitleCase() ?: return null
+
+        val href = fixUrlNull(this.attr("href")) ?: return null
+        
+        val posterUrl = fixUrlNull(this.selectFirst("img.px-card-img")?.attr("src"))
+
+        return newTvSeriesSearchResponse(title, href, TvType.Documentary) {
+            this.posterUrl = posterUrl
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
@@ -66,8 +83,9 @@ class BelgeselX : MainAPI() {
         val tokenResponse = app.get("https://cse.google.com/cse.js?cx=${cx}")
         val cseLibVersion = Regex("""cselibVersion": "(.*)"""").find(tokenResponse.text)?.groupValues?.get(1)
         val cseToken      = Regex("""cse_token": "(.*)"""").find(tokenResponse.text)?.groupValues?.get(1)
+        val fexp      = Regex("""fexp": "[.*]"""").find(tokenResponse.text)?.groupValues?.get(1)
 
-        val response = app.get("https://cse.google.com/cse/element/v1?rsz=filtered_cse&num=100&hl=tr&source=gcsc&cselibv=${cseLibVersion}&cx=${cx}&q=${query}&safe=off&cse_tok=${cseToken}&sort=&exp=cc%2Capo&oq=${query}&callback=google.search.cse.api9969&rurl=https%3A%2F%2Fbelgeselx.com%2F")
+        val response = app.get("https://cse.google.com/cse/element/v1?rsz=filtered_cse&num=100&hl=tr&source=gcsc&cselibv=${cseLibVersion}&cx=${cx}&q=${query}&safe=off&cse_tok=${cseToken}&sort=&exp=cc%2Capo&fexp=${fexp}&callback=google.search.cse.api9969&rurl=https%3A%2F%2Fbelgeselx.com%2F")
         Log.d("BLX", "response » $response")
         val titles     = Regex(""""titleNoFormatting": "(.*)"""").findAll(response.text).map { it.groupValues[1] }.toList()
         val urls       = Regex(""""ogImage": "(.*)"""").findAll(response.text).map { it.groupValues[1] }.toList()
