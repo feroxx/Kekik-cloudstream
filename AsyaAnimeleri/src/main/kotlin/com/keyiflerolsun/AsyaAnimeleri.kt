@@ -43,10 +43,10 @@ class AsyaAnimeleri : MainAPI() {
         val document = app.get(url).document
 
         val home = if (request.data == "${mainUrl}/") {
-            // Son eklenenler - ana sayfadaki bölüm kartları
+            
             document.select("div.listupd div.utimes").mapNotNull { it.toLatestResult() }
         } else {
-            // Tür sayfaları - seri kartları
+            
             document.select("div.listupd article div.bsx").mapNotNull { it.toSearchResult() }
         }
 
@@ -127,7 +127,7 @@ class AsyaAnimeleri : MainAPI() {
         Log.d("AAE", "data » $data")
         val document = app.get(data).document
 
-        // select.mirror içindeki option'ları al
+        
         val mirrorOptions = document.select("select.mirror option")
         Log.d("AAE", "Mirror sayısı: ${mirrorOptions.size}")
 
@@ -136,11 +136,11 @@ class AsyaAnimeleri : MainAPI() {
             if (base64Value.isBlank()) continue
 
             try {
-                // Base64 decode -> iframe HTML
+               
                 val decodedHtml = String(Base64.decode(base64Value, Base64.DEFAULT))
                 Log.d("AAE", "Decoded HTML » $decodedHtml")
 
-                // iframe src'yi çıkar
+                
                 val iframeSrc = Regex("""src="([^"]+)"""").find(decodedHtml)?.groupValues?.get(1)
                 if (iframeSrc.isNullOrBlank()) continue
                 Log.d("AAE", "iframe src » $iframeSrc")
@@ -151,7 +151,7 @@ class AsyaAnimeleri : MainAPI() {
             }
         }
 
-        // Ayrıca sayfada zaten yüklü olan iframe'i de kontrol et
+        
         document.select("div#pembed iframe, div.player-embed iframe").forEach { iframe ->
             val iframeSrc = iframe.attr("src")
             if (iframeSrc.isNotBlank()) {
