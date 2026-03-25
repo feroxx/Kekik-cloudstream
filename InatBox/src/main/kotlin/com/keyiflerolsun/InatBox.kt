@@ -40,7 +40,7 @@ import org.json.JSONException
 import org.json.JSONObject
 
 class InatBox : MainAPI() {
-    private val contentUrl = "https://diziboxen.help"
+    private val contentUrl = "https://diziboxen.help/CDN/001/002/dizibox"
 
     override var name = "InatBox"
     override val hasMainPage = true
@@ -56,7 +56,7 @@ class InatBox : MainAPI() {
         //"https://str.sprboxs.bar/CDN/001_STR/str.sprboxs.bar//spor_v2.php" to "Spor Kanalları",
         //"${contentUrl}/tv/cable.php" to "Kanallar Liste 1",
         //"${contentUrl}/tv/list2.php" to "Kanallar Liste 2",
-        //"${contentUrl}/tv/sinema.php" to "Sinema Kanalları",
+        "${contentUrl}/tv/sinema.php" to "Sinema Kanalları",
         //"${contentUrl}/tv/belgesel.php" to "Belgesel Kanalları",
         //"${contentUrl}/tv/ulusal.php" to "Ulusal Kanallar",
         //"${contentUrl}/tv/haber.php" to "Haber Kanalları",
