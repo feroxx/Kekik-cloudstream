@@ -61,7 +61,7 @@ class InatBox : MainAPI() {
         //"${contentUrl}/tv/ulusal.php" to "Ulusal Kanallar",
         //"${contentUrl}/tv/haber.php" to "Haber Kanalları",
         //"${contentUrl}/tv/cocuk.php" to "Çocuk Kanalları",
-        "${contentUrl}/CDN/001/002/dizibox/tv/dini/index.php" to "Dini Kanallar",
+        "${contentUrl}/tv/dini.php" to "Dini Kanallar",
         //"${contentUrl}/CDN/001/002/dizibox/ex/index.php" to "EXXEN",
         "${contentUrl}/CDN/001/002/dizibox/ga/index.php" to "Gain",
         //"${contentUrl}/max/index.php" to "Max-BluTV",
