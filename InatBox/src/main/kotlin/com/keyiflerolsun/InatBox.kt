@@ -62,7 +62,7 @@ class InatBox : MainAPI() {
         "${contentUrl}/tv/haber.php" to "Haber Kanalları",
         "${contentUrl}/tv/cocuk.php" to "Çocuk Kanalları",
         "${contentUrl}/tv/dini.php" to "Dini Kanallar",
-        "${contentUrl}/ex/index.php" to "EXXEN",
+        "${contentUrl}/CDN/001/002/dizibox/ex/index.php" to "EXXEN",
         "${contentUrl}/ga/index.php" to "Gain",
         "${contentUrl}/max/index.php" to "Max-BluTV",
         "${contentUrl}/nf/index.php" to "Netflix",
