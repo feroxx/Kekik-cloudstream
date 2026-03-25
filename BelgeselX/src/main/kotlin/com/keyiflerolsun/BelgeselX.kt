@@ -69,7 +69,7 @@ class BelgeselX : MainAPI() {
         val title = this.selectFirst(".px-card-title")?.text()?.trim()?.toTitleCase() ?: return null
 
         val href = fixUrlNull(this.attr("href")) ?: return null
-        
+
         val posterUrl = fixUrlNull(this.selectFirst("img.px-card-img")?.attr("src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.Documentary) {
@@ -118,23 +118,34 @@ class BelgeselX : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title       = document.selectFirst("h2.gen-title")?.text()?.trim()?.toTitleCase() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.gen-tv-show-top img")?.attr("src")) ?: return null
-        val description = document.selectFirst("div.gen-single-tv-show-info p")?.text()?.trim()
-        val tags        = document.select("div.gen-socail-share a[href*='belgeselkanali']").map { it.attr("href").split("/").last().replace("-", " ").toTitleCase() }
+        // 1. Üst Kısım Seçicileri (Head & Hero)
+        val title = document.selectFirst("h1.px-hero-title")?.text()?.trim()?.toTitleCase() ?: return null
+        val description = document.selectFirst("p.px-hero-desc")?.text()?.trim()
 
-        var counter  = 0
-        val episodes = document.select("div.gen-movie-contain").mapNotNull {
-            val epName     = it.selectFirst("div.gen-movie-info h3 a")?.text()?.trim() ?: return@mapNotNull null
-            val epHref     = fixUrlNull(it.selectFirst("div.gen-movie-info h3 a")?.attr("href")) ?: return@mapNotNull null
+        // Poster genelde body'de yoksa head içindeki meta etiketinden alınır. En stabil yöntemdir.
+        val poster = fixUrlNull(document.selectFirst("meta[property=og:image]")?.attr("content"))
 
-            val seasonName = it.selectFirst("div.gen-single-meta-holder ul li")?.text()?.trim() ?: ""
-            var epEpisode  = Regex("""Bölüm (\d+)""").find(seasonName)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val epSeason   = Regex("""Sezon (\d+)""").find(seasonName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+        // Kanal adını (HİSTORY HD vb.) etiket olarak alıyoruz.
+        val tags = document.select("a.px-hero-channel span").mapNotNull { it.text().trim().toTitleCase() }
 
-            if (epEpisode == 0) {
-                epEpisode = counter++
+        // 2. Bölümleri (Episodes) Çekme ve Pars Etme
+        val episodes = document.select("a.px-ep-card").mapNotNull { element ->
+            val epName = element.selectFirst(".px-ep-title")?.text()?.trim() ?: return@mapNotNull null
+            var epHref = fixUrlNull(element.attr("href")) ?: return@mapNotNull null
+
+            // KRİTİK MÜDAHALE: onclick içindeki gerçek bölüm ID'sini yakalıyoruz. (örn: '1598' -> 1598)
+            val onClickStr = element.attr("onclick")
+            val epId = Regex("""'(\d+)'""").find(onClickStr)?.groupValues?.get(1)
+
+            // epId'yi loadLinks tarafında işleyebilmek için querystring olarak ekliyoruz.
+            if (epId != null) {
+                epHref = "$epHref?epId=$epId"
             }
+
+            // Sezon ve Bölüm numarasını "S3 · B3" formatından güvenli bir şekilde çıkarıyoruz.
+            val sMeta = element.selectFirst(".px-ep-s")?.text()?.trim() ?: ""
+            val epSeason  = Regex("""S(\d+)""").find(sMeta)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val epEpisode = Regex("""B(\d+)""").find(sMeta)?.groupValues?.get(1)?.toIntOrNull() ?: 1
 
             newEpisode(epHref) {
                 this.name    = epName
@@ -150,53 +161,60 @@ class BelgeselX : MainAPI() {
         }
     }
 
-override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-    Log.d("BLX", "data » $data")
-    
-    val source = app.get(data)
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("BLX", "loadLinks data » $data")
 
-    // Sayfa kaynağından ilk fnc_addWatch içeren div elemanının data-episode numarasını al
-    val firstEpisodeId = Regex("""<div[^>]*class=["'][^"']*fnc_addWatch[^"']*["'][^>]*data-episode=["'](\d+)["']""")
-        .find(source.text)?.groupValues?.get(1)
+        // 1. load fonksiyonunda URL'nin sonuna eklediğimiz epId'yi alıyoruz.
+        // substringAfter ile epId= sonrasını alır, eğer epId yoksa data'nın kendisini döner.
+        val episodeId = data.substringAfter("?epId=", "").substringBefore("&")
 
-    if (firstEpisodeId == null) {
-        Log.e("BLX", "İlk fnc_addWatch data-episode bulunamadı.")
-        return false
-    }
+        Log.d("BLX", "Kullanılacak Bölüm ID: $episodeId")
 
-    Log.d("BLX", "İlk fnc_addWatch data-episode: $firstEpisodeId")
-    
-    // Bu ID ile iframe URL’si oluştur
-    val iframeUrl = "https://belgeselx.com/video/data/new4.php?id=$firstEpisodeId"
-    Log.d("BLX", "iframeUrl oluşturuldu » $iframeUrl")
-    
-    // iframe URL’si üzerinden veriyi al
-    val alternatifResp = app.get(iframeUrl, referer = data)
+        // 2. Çektiğimiz ID ile AJAX iframe URL’sini oluşturuyoruz.
+        val iframeUrl = "https://belgeselx.com/video/data/new4.php?id=$episodeId"
+        Log.d("BLX", "iframeUrl oluşturuldu » $iframeUrl")
 
-    // new4.php içindeki video linklerini parse et
-    Regex("""file:"([^"]+)", label: "([^"]+)""").findAll(alternatifResp.text).forEach {
-        var thisName = this.name
-        val videoUrl = it.groupValues[1]
-        var quality = it.groupValues[2]
+        // 3. Referer başlığını temizleyerek atıyoruz. Site güvenlik duvarları "?epId=" olan bir URL'yi reddedebilir.
+        val refererUrl = data.substringBefore("?epId=")
+        val alternatifResp = app.get(iframeUrl, referer = refererUrl).text
 
-        if (quality == "FULL") {
-            quality = "1080p"
-            thisName = "Google"
-        }
-        // Callback ile video bilgilerini geri gönder
-        callback.invoke(
-            newExtractorLink(
-                source = thisName,
-                name = thisName,
-                url = videoUrl,
-                type = ExtractorLinkType.VIDEO
-            ) {
-                this.referer = data
-                quality = getQualityFromName(quality).toString()
+        var linksFound = false
+
+        // 4. new4.php içindeki video linklerini parse et
+        // DÜZELTME: \s* ekleyerek boşluklara (file: "url" vs file:"url") karşı regex'i esnekleştirdik.
+        Regex("""file\s*:\s*["']([^"']+)["']\s*,\s*label\s*:\s*["']([^"']+)["']""").findAll(alternatifResp).forEach {
+            val videoUrl = it.groupValues[1]
+            var qualityStr = it.groupValues[2]
+            var sourceName = this.name
+
+            if (qualityStr.equals("FULL", ignoreCase = true)) {
+                qualityStr = "1080p"
+                sourceName = "Google" // VIP/Premium izlenimi yaratmak için source adını değiştirebilirsin
             }
-        )
-    }
 
-    return true
-}
+            // DÜZELTME: Eğer gelen link bir m3u8 (HLS) listesi ise, player'ın bunu doğru parse etmesi için type'ı M3U8 yapmalıyız.
+            val linkType = if (videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+
+            // Callback ile video bilgilerini geri gönder
+            callback.invoke(
+                newExtractorLink(
+                    source = sourceName,
+                    name = sourceName,
+                    url = videoUrl,
+                    type = linkType
+                ) {
+                    this.referer = refererUrl
+                    this.quality = getQualityFromName(qualityStr)
+                }
+            )
+            linksFound = true
+        }
+
+        return linksFound
+    }
 }
