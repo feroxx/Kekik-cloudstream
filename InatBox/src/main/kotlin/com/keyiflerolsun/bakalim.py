@@ -7,7 +7,7 @@ from Crypto.Util.Padding import unpad
 import requests, base64, json
 
 class InatIstek:
-    def __init__(self, aes_key: bytes = b"C3V4HUpUbGDOjxEl"):
+    def __init__(self, aes_key: bytes = b"ywevqtjrurkwtqgz"):
         self.aes_key = aes_key
 
     def hostname_al(self, url: str) -> str:
@@ -70,7 +70,7 @@ class InatIstek:
 
 
 inat    = InatIstek()
-veriler = inat.istek_yap("https://dizibox.rest/amz/index.php")
+veriler = inat.istek_yap("https://diziboxen.help/CDN/001/002/dizibox/ex/index.php")
 for veri in veriler:
     baslik = veri.get("diziName") or veri.get("chName")
     if baslik == "@inattvapk":
