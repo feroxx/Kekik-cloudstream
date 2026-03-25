@@ -40,7 +40,7 @@ import org.json.JSONException
 import org.json.JSONObject
 
 class InatBox : MainAPI() {
-    private val contentUrl = "https://diziboxen.help"
+    private val contentUrl = "https://diziboxen.help/CDN/001/002/dizibox"
 
     override var name = "InatBox"
     override val hasMainPage = true
@@ -54,28 +54,28 @@ class InatBox : MainAPI() {
 
     override val mainPage = mainPageOf(
         //"https://str.sprboxs.bar/CDN/001_STR/str.sprboxs.bar//spor_v2.php" to "Spor Kanalları",
-        "${contentUrl}/tv/cable.php" to "Kanallar Liste 1",
-        "${contentUrl}/tv/list2.php" to "Kanallar Liste 2",
+        //"${contentUrl}/tv/cable.php" to "Kanallar Liste 1",
+        //"${contentUrl}/tv/list2.php" to "Kanallar Liste 2",
         "${contentUrl}/tv/sinema.php" to "Sinema Kanalları",
-        "${contentUrl}/tv/belgesel.php" to "Belgesel Kanalları",
-        "${contentUrl}/tv/ulusal.php" to "Ulusal Kanallar",
-        "${contentUrl}/tv/haber.php" to "Haber Kanalları",
-        "${contentUrl}/tv/cocuk.php" to "Çocuk Kanalları",
+        //"${contentUrl}/tv/belgesel.php" to "Belgesel Kanalları",
+        //"${contentUrl}/tv/ulusal.php" to "Ulusal Kanallar",
+        //"${contentUrl}/tv/haber.php" to "Haber Kanalları",
+        //"${contentUrl}/tv/cocuk.php" to "Çocuk Kanalları",
         "${contentUrl}/tv/dini.php" to "Dini Kanallar",
-        "${contentUrl}/ex/index.php" to "EXXEN",
+        //"${contentUrl}/CDN/001/002/dizibox/ex/index.php" to "EXXEN",
         "${contentUrl}/ga/index.php" to "Gain",
-        "${contentUrl}/max/index.php" to "Max-BluTV",
+        //"${contentUrl}/max/index.php" to "Max-BluTV",
         "${contentUrl}/nf/index.php" to "Netflix",
         "${contentUrl}/dsny/index.php" to "Disney+",
         "${contentUrl}/amz/index.php" to "Amazon Prime",
         "${contentUrl}/hb/index.php" to "HBO Max",
         "${contentUrl}/tbi/index.php" to "Tabii",
-        "${contentUrl}/film/mubi.php" to "Mubi",
-        "${contentUrl}/ccc/index.php" to "TOD",
+        //"${contentUrl}/film/mubi.php" to "Mubi",
+        //"${contentUrl}/ccc/index.php" to "TOD",
         "${contentUrl}/yabanci-dizi/index.php" to "Yabancı Diziler",
         "${contentUrl}/yerli-dizi/index.php" to "Yerli Diziler",
-        "${contentUrl}/film/yerli-filmler.php" to "Yerli Filmler",
-        "${contentUrl}/film/4k-film-exo.php" to "4K Film İzle | Exo"
+        //"${contentUrl}/film/yerli-filmler.php" to "Yerli Filmler",
+        //"${contentUrl}/film/4k-film-exo.php" to "4K Film İzle | Exo"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
