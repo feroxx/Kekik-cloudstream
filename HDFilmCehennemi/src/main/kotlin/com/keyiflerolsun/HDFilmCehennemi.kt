@@ -207,12 +207,16 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
+    /**
+     * Güncel CloseLoad / Playmix Deşifre Algoritması
+     */
     private fun dcHello(parts: List<String>): String {
-        // 1. join
         val joined = parts.joinToString("")
 
-        // 2. ROT13
-        val rot = joined.map { c ->
+        val decodedBytes = android.util.Base64.decode(joined, android.util.Base64.DEFAULT)
+        val base64Decoded = String(decodedBytes, Charsets.ISO_8859_1)
+
+        val rot = base64Decoded.map { c ->
             when (c) {
                 in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
                 in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
@@ -220,17 +224,11 @@ class HDFilmCehennemi : MainAPI() {
             }
         }.joinToString("")
 
-        // 3. reverse
         val reversed = rot.reversed()
 
-        // 4. base64 decode
-        val decoded = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
-        val result = decoded.toString(Charsets.ISO_8859_1)
-
-        // 5. charCode çözme (EN KRİTİK KISIM)
         val unmix = StringBuilder()
-        for (i in result.indices) {
-            val charCode = result[i].code
+        for (i in reversed.indices) {
+            val charCode = reversed[i].code
             val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
             unmix.append(newChar.toChar())
         }
