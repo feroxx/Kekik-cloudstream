@@ -11,7 +11,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 
 class DiziPalOriginal : MainAPI() {
-    override var mainUrl              = "https://dizipal2037.com"
+    override var mainUrl              = "https://dizipal2038.com"
     override var name                 = "DiziPalOriginal"
     override val hasMainPage          = true
     override var lang                 = "tr"
