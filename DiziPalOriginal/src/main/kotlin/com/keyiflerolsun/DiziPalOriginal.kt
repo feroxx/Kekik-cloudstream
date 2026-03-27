@@ -70,7 +70,7 @@ class DiziPalOriginal : MainAPI() {
             request.data,
         ).document
         val home     = if (request.data.contains("/bolumler")) {
-            document.select("div.episodes-list-grid > div").mapNotNull { it.sonBolumler() }
+            document.select("div.episodes-list-grid > a.episode-list-item").mapNotNull { it.sonBolumler() }
         } else {
             document.select("ul.content-grid > li").mapNotNull { it.diziler() }
         }
@@ -79,14 +79,19 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.sonBolumler(): SearchResponse? {
-        val name      = this.selectFirst("div.episode-meta .ep-title")?.text() ?: return null
-        val episode   = this.selectFirst("div.episode-meta .ep-info")?.text()?.trim()?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
+        val name      = this.selectFirst(".ep-title")?.text() ?: return null
+        val episode   = this.selectFirst(".ep-info")?.text()?.trim()?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
         val title     = "$name $episode"
 
-        val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
+        val href      = fixUrlNull(this.attr("href")) ?: return null
+        val imgElement = this.selectFirst("img")
+        val posterUrl = fixUrlNull(imgElement?.attr("data-src")?.ifEmpty { imgElement.attr("src") })
 
-        return newTvSeriesSearchResponse(title, href.substringBefore("/sezon"), TvType.TvSeries) {
+        val seriesUrl = href
+            .replace(Regex("-\\d+-sezon-\\d+-bolum.*$"), "") // Sonundaki sezon-bölüm tagini at
+            .replace("/bolum/", "/dizi/")
+
+        return newTvSeriesSearchResponse(title, seriesUrl, TvType.TvSeries) {
             this.posterUrl = posterUrl
         }
     }
