@@ -246,7 +246,6 @@ class DiziPalOriginal : MainAPI() {
     ): Boolean {
         Log.d("DZP", "Oynatılacak Bölüm Linki » $data")
 
-        // Sunucunun bizi bot sanmaması ve iki isteği eşleştirebilmesi için sabit bir User-Agent
         val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
         // 1. AŞAMA: GET isteği atıp hem Token'ı hem de ÇEREZLERİ alıyoruz
@@ -267,7 +266,6 @@ class DiziPalOriginal : MainAPI() {
             return false
         }
 
-        // KRİTİK NOKTA: Sunucunun verdiği çerezleri (PHPSESSID, _ct vb.) tek bir string'de birleştiriyoruz
         val cookies = getResponse.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
 
         Log.d("DZP", "Bulunan Token » $configToken")
@@ -282,15 +280,14 @@ class DiziPalOriginal : MainAPI() {
                 "Content-Type"     to "application/x-www-form-urlencoded",
                 "X-Requested-With" to "XMLHttpRequest",
                 "Origin"           to mainUrl,
-                "Cookie"           to cookies // Yakaladığımız oturumu buraya basıyoruz
+                "Cookie"           to cookies
             ),
             referer = data,
-            data = mapOf("cfg" to configToken) // '=' işareti burada otomatik eklenir
+            data = mapOf("cfg" to configToken)
         ).text
 
         Log.d("DZP", "API Yanıtı » $configResponseRaw")
 
-        // JSON'dan embed linkini yakala (v parametresi)
         val embedUrlRaw = Regex(""""v"\s*:\s*"([^"]+)"""").find(configResponseRaw)?.groupValues?.getOrNull(1)
             ?.replace("\\/", "/")
 
@@ -301,6 +298,63 @@ class DiziPalOriginal : MainAPI() {
 
         val embedUrl = fixUrl(embedUrlRaw)
         Log.d("DZP", "Çözülen Embed URL » $embedUrl")
+
+        // ---------------------------------------------------------
+        // YENİ EKLENEN AŞAMA: İMAGESTOO SUNUCUSU KONTROLÜ
+        // ---------------------------------------------------------
+        if (embedUrl.contains("imagestoo")) {
+            // 1. URL'nin sonundan video ID'sini çek (Örn: decff3a1f694fccd108d4ce07b2587b5)
+            val videoId = embedUrl.trimEnd('/').substringAfterLast("/")
+
+            // 2. İlgili API endpoint'ini oluştur
+            val imagestooApiUrl = "https://imagestoo.com/player/index.php?data=$videoId&do=getVideo"
+            Log.d("DZP", "Imagestoo API URL » $imagestooApiUrl")
+
+            // 3. API'ye istek at (X-Requested-With header'ı bu tür AJAX isteklerinde önemlidir)
+            val apiResponse = app.get(
+                url = imagestooApiUrl,
+                referer = embedUrl,
+                headers = mapOf(
+                    "User-Agent" to userAgent,
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Accept" to "*/*"
+                )
+            ).text
+
+            // 4. JSON benzeri veriden videoSource değerini yakala
+            val videoSourceRaw = Regex(""""videoSource"\s*:\s*"([^"]+)"""").find(apiResponse)?.groupValues?.getOrNull(1)
+
+            if (videoSourceRaw != null) {
+                // Kaçış karakterlerini (\/) temizle ve fixUrl ile son halini ver
+                val cleanUrl = videoSourceRaw.replace("\\/", "/")
+                val finalM3u8Url = fixUrl(cleanUrl)
+
+                Log.d("DZP", "Imagestoo Çözülen Video Kaynağı » $finalM3u8Url")
+
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "Dizipal (Imagestoo)",
+                        url = finalM3u8Url,
+                        type = ExtractorLinkType.M3U8 // .txt uzantılı olsa bile içeriği HLS/M3U8 formatındadır
+                    ) {
+                        referer = embedUrl
+                        quality = Qualities.Unknown.value
+                    }
+                )
+
+                // Imagestoo için altyazı çekme işlemi gerekiyorsa API yanıtından aynı Regex mantığıyla çekilebilir.
+                // Şimdilik işlemi burada sonlandırıyoruz.
+                return true
+
+            } else {
+                Log.e("DZP", "Imagestoo API yanıtından videoSource çıkarılamadı! Yanıt: $apiResponse")
+                return false
+            }
+        }
+        // ---------------------------------------------------------
+        // STANDART AŞAMA: ANA SUNUCU VEYA FARKLI KAYNAK
+        // ---------------------------------------------------------
 
         // 3. AŞAMA: Embed Sayfasına Git ve JWPlayer Verilerini Ayıkla
         val embedSource = app.get(
