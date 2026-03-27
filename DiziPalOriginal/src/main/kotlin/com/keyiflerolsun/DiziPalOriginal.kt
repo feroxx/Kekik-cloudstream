@@ -24,7 +24,7 @@ class DiziPalOriginal : MainAPI() {
     // override var sequentialMainPageScrollDelay = 250L // ? 0.25 saniye
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/diziler/bolumler"                  to "Son Bölümler",
+        "${mainUrl}/bolumler"                                      to "Son Bölümler",
         "${mainUrl}/diziler"                                       to "Yeni Diziler",
         "${mainUrl}/filmler"                                       to "Yeni Filmler",
         "${mainUrl}/platform/netflix"                              to "Netflix",
@@ -37,7 +37,7 @@ class DiziPalOriginal : MainAPI() {
         "${mainUrl}/platform/max"                                  to "Max",
         //"${mainUrl}/diziler?kelime=&durum=&tur=26&type=&siralama=" to "Anime",
         //"${mainUrl}/diziler?kelime=&durum=&tur=5&type=&siralama="  to "Bilimkurgu Dizileri",
-        "${mainUrl}/kategori/bilimkurgu"                                to "Bilimkurgu Filmleri",
+        "${mainUrl}/kategori/bilim-kurgu"                                to "Bilimkurgu Filmleri",
         //"${mainUrl}/diziler?kelime=&durum=&tur=11&type=&siralama=" to "Komedi Dizileri",
         "${mainUrl}/kategori/komedi"                                    to "Komedi Filmleri",
         //"${mainUrl}/diziler?kelime=&durum=&tur=4&type=&siralama="  to "Belgesel Dizileri",
@@ -69,7 +69,7 @@ class DiziPalOriginal : MainAPI() {
         val document = app.get(
             request.data,
         ).document
-        val home     = if (request.data.contains("/diziler/bolumler")) {
+        val home     = if (request.data.contains("/bolumler")) {
             document.select("div.episodes-list-grid > div").mapNotNull { it.sonBolumler() }
         } else {
             document.select("ul.content-grid > li").mapNotNull { it.diziler() }
