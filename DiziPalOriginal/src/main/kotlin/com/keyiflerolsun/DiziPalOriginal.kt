@@ -311,7 +311,7 @@ class DiziPalOriginal : MainAPI() {
             Log.d("DZP", "Imagestoo API URL » $imagestooApiUrl")
 
             // 3. API'ye istek at (X-Requested-With header'ı bu tür AJAX isteklerinde önemlidir)
-            val apiResponse = app.get(
+            val apiResponse = app.post(
                 url = imagestooApiUrl,
                 referer = embedUrl,
                 headers = mapOf(
