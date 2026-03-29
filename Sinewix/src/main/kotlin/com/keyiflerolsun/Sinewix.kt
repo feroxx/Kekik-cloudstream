@@ -90,7 +90,6 @@ class Sinewix : MainAPI() {
             newTvSeriesLoadResponse(title, url, type, episodes) {
                 this.posterUrl = poster
                 this.plot = it.overview
-                score = it.voteAverage?.toInt() as Score?
                 this.year = it.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull()
             }
         } else {
@@ -98,7 +97,6 @@ class Sinewix : MainAPI() {
             newMovieLoadResponse(title, url, type, videoLink) {
                 this.posterUrl = poster
                 this.plot = it.overview
-                score = it.voteAverage?.toInt() as Score?
                 this.year = it.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull()
             }
         }
