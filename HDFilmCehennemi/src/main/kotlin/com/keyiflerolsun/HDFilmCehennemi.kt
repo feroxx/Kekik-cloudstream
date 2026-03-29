@@ -211,12 +211,11 @@ class HDFilmCehennemi : MainAPI() {
      * Güncel CloseLoad / Playmix Deşifre Algoritması
      */
     private fun dcHello(parts: List<String>): String {
+        // 1. Birleştir
         val joined = parts.joinToString("")
 
-        val decodedBytes = android.util.Base64.decode(joined, android.util.Base64.DEFAULT)
-        val base64Decoded = String(decodedBytes, Charsets.ISO_8859_1)
-
-        val rot = base64Decoded.map { c ->
+        // 2. ROT13 Uygula (ÖNCE Base64 DEĞİL!)
+        val rot = joined.map { c ->
             when (c) {
                 in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
                 in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
@@ -224,11 +223,19 @@ class HDFilmCehennemi : MainAPI() {
             }
         }.joinToString("")
 
+        // 3. Tersine Çevir
         val reversed = rot.reversed()
 
+        // 4. Şimdi Base64 Decode Yap
+        val decodedBytes = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
+
+        // 5. Unmix (Matematiksel Döngü)
         val unmix = StringBuilder()
-        for (i in reversed.indices) {
-            val charCode = reversed[i].code
+        for (i in decodedBytes.indices) {
+            // JS'deki charCodeAt(i) 0-255 arası döner.
+            // Kotlin'deki Byte'ı unsigned Int'e çevirmek için "and 0xFF" kullanıyoruz.
+            val charCode = decodedBytes[i].toInt() and 0xFF
+
             val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
             unmix.append(newChar.toChar())
         }
