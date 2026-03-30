@@ -232,18 +232,18 @@ override suspend fun loadLinks(
 }
 
     // Proceed to og:video extraction if YouTube iframe is not present or fails
-    val ogVideo = document.selectFirst("iframe")?.attr("abs:src")
+    val ogVideo = document.selectFirst("iframe")?.attr("src")
         ?: return loadExtractor(data, data, subtitleCallback, callback) // Fallback to loadExtractor if no og:video
-
+        Log.d("DDizi:", "iframe src $ogVideo")
     val playerDoc = app.get("${mainUrl.removeSuffix("/")}//${ogVideo.removePrefix("/")}", headers = getHeaders(data)).document
     val jwScript = playerDoc.select("script").firstOrNull { it.html().contains("jwplayer") && it.html().contains("sources") }
         ?: return loadExtractor(ogVideo, data, subtitleCallback, callback) // Fallback to loadExtractor if no JW script
-
+    Log.d("DDizi:", "jwScript $jwScript")
     val sourcesRegex = Regex("""sources:\s*\[\s*\{(.*?)\}\s*,?\s*\]""", RegexOption.DOT_MATCHES_ALL)
     val fileRegex = Regex("""file:\s*["'](.*?)["']""")
     val sourcesMatch = sourcesRegex.find(jwScript.html()) ?: return false
     val fileUrl = fileRegex.find(sourcesMatch.groupValues[1])?.groupValues?.get(1) ?: return false
-    Log.d("fileurl", fileUrl)
+    Log.d("DDizi: fileurl", fileUrl)
     val isHls = fileUrl.contains(".m3u8")
     val quality = Regex("""label:\s*["'](.*?)["']""").find(sourcesMatch.groupValues[1])?.groupValues?.get(1) ?: "Auto"
     val videoHeaders = if (fileUrl.contains("master.txt")) {
