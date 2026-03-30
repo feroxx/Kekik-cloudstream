@@ -80,7 +80,6 @@ class FullHDFilm : MainAPI() {
         val tags        = document.select("div.tur.info a").map { it.text() }
         val year        = Regex("""(\d{4})""").find(document.selectFirst("div.yayin-tarihi.info")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
         val actors      = document.selectFirst("div.oyuncular")?.ownText()?.split(",")?.map { Actor(it.trim()) } ?: emptyList()
-        val rating      = document.selectFirst("div.imdb")?.text()?.let { Regex("""IMDb\s*([\d\.]+)""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
 
         val isSeries = url.lowercase().contains("-dizi") || tags.any { it.lowercase().contains("dizi") }
 
@@ -114,7 +113,6 @@ class FullHDFilm : MainAPI() {
             this.year = year
             this.plot = description
             this.tags = tags
-            this.rating = rating
             this.actors = actors.map { ActorData(it) }
         }
     }
