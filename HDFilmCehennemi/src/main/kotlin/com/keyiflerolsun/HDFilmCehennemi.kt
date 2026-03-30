@@ -214,7 +214,7 @@ class HDFilmCehennemi : MainAPI() {
         // 1. Birleştir
         val joined = parts.joinToString("")
 
-        // 2. ROT13 Uygula (ÖNCE Base64 DEĞİL!)
+        // 2. ROT13 Uygula
         val rot = joined.map { c ->
             when (c) {
                 in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
@@ -223,18 +223,18 @@ class HDFilmCehennemi : MainAPI() {
             }
         }.joinToString("")
 
-        // 3. Tersine Çevir
-        val reversed = rot.reversed()
+        // 3. Base64 Decode (YENİ SIRA: Önce decode ediyoruz)
+        val decodedBytes = android.util.Base64.decode(rot, android.util.Base64.DEFAULT)
 
-        // 4. Şimdi Base64 Decode Yap
-        val decodedBytes = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
+        // 4. Byte dizisini tersine çevir (JS'deki split('').reverse().join('') karşılığı)
+        val reversedBytes = decodedBytes.reversedArray()
 
         // 5. Unmix (Matematiksel Döngü)
         val unmix = StringBuilder()
-        for (i in decodedBytes.indices) {
+        for (i in reversedBytes.indices) {
             // JS'deki charCodeAt(i) 0-255 arası döner.
             // Kotlin'deki Byte'ı unsigned Int'e çevirmek için "and 0xFF" kullanıyoruz.
-            val charCode = decodedBytes[i].toInt() and 0xFF
+            val charCode = reversedBytes[i].toInt() and 0xFF
 
             val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
             unmix.append(newChar.toChar())
