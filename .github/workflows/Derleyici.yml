@@ -39,6 +39,7 @@
          with:
            distribution: adopt
            java-version: 17
+           cache: gradle
  
        - name: Android SDK Ayarla
          uses: android-actions/setup-android@v3.2.2
