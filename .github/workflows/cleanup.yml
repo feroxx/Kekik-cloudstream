@@ -26,7 +26,7 @@ jobs:
           # Yapılandırma
           token = os.getenv("GITHUB_TOKEN")
           repo = "${{ github.repository }}"
-          days_to_keep = 7
+          days_to_keep = 3
           
           headers = {
               "Authorization": f"Bearer {token}",
