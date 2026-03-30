@@ -1,27 +1,11 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+// ! Bu araÃ§ @keyiflerolsun tarafÄ±ndan | @KekikAkademi iÃ§in yazÄ±lmÄ±ÅŸtÄ±r.
 
 package com.keyiflerolsun
 
 import android.util.Base64
 import android.util.Log
-import com.lagradost.cloudstream3.Actor
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.fixUrlNull
-import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.newSubtitleFile
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
@@ -32,46 +16,47 @@ class FullHDFilm : MainAPI() {
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = false
-    override val supportedTypes       = setOf(TvType.Movie)
+    override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/tur/turkce-altyazili-film-izle"       to "Altyazılı Filmler",
-        "${mainUrl}/tur/netflix-filmleri-izle"		       to "Netflix",
+        "${mainUrl}/tur/turkce-altyazili-film-izle"       to "AltyazÄ±lÄ± Filmler",
+        "${mainUrl}/tur/netflix-filmleri-izle/"		       to "Netflix",
+        "${mainUrl}/tur/yerli-film-izle"		           to "Yerli Film",
         "${mainUrl}/category/aile-filmleri-izle"	       to "Aile",
         "${mainUrl}/category/aksiyon-filmleri-izle"       to "Aksiyon",
-        "${mainUrl}/category/animasyon-filmleri-izle"	   to "Animasyon",
-        "${mainUrl}/category/belgesel-filmleri-izle"	   to "Belgesel",
-        "${mainUrl}/category/bilim-kurgu-filmleri-izle"   to "Bilim-Kurgu",
-        "${mainUrl}/category/biyografi-filmleri-izle"	   to "Biyografi",
-        "${mainUrl}/category/dram-filmleri-izle"		   to "Dram",
-        "${mainUrl}/category/fantastik-filmler-izle"	   to "Fantastik",
-        "${mainUrl}/category/gerilim-filmleri-izle"	   to "Gerilim",
-        "${mainUrl}/category/gizem-filmleri-izle"		   to "Gizem",
-        "${mainUrl}/category/komedi-filmleri-izle"		   to "Komedi",
-        "${mainUrl}/category/korku-filmleri-izle"		   to "Korku",
-        "${mainUrl}/category/macera-filmleri-izle"		   to "Macera",
-        "${mainUrl}/category/romantik-filmler-izle"	   to "Romantik",
-        "${mainUrl}/category/savas-filmleri-izle"		   to "Savaş",
-        "${mainUrl}/category/suc-filmleri-izle"		   to "Suç",
-        "${mainUrl}/tur/yerli-film-izle"			       to "Yerli Film"
+        "${mainUrl}/category/animasyon-filmleri-izle"     to "Animasyon",
+        "${mainUrl}/category/belgesel-filmleri-izle"      to "Belgesel",
+        "${mainUrl}/category/bilim-kurgu-filmleri-izle"   to "Bilim Kurgu",
+        "${mainUrl}/category/biyografi-filmleri-izle"     to "Biyografi",
+        "${mainUrl}/category/dram-filmleri-izle"          to "Dram",
+        "${mainUrl}/category/fantastik-filmler-izle"      to "Fantastik",
+        "${mainUrl}/category/gerilim-filmleri-izle"       to "Gerilim",
+        "${mainUrl}/category/gizem-filmleri-izle"	       to "Gizem",
+        "${mainUrl}/category/kisa"	                       to "KÄ±sa",
+        "${mainUrl}/category/komedi-filmleri-izle"	       to "Komedi",
+        "${mainUrl}/category/korku-filmleri-izle"	       to "Korku",
+        "${mainUrl}/category/macera-filmleri-izle"	       to "Macera",
+        "${mainUrl}/category/muzik"	                       to "MÃ¼zik",
+        "${mainUrl}/category/muzikal-filmleri-izle"	       to "MÃ¼zikal",
+        "${mainUrl}/category/romantik-filmler-izle"       to "Romantik",
+        "${mainUrl}/category/savas-filmleri-izle"         to "SavaÅŸ",
+        "${mainUrl}/category/spor-filmleri-izle"          to "Spor",
+        "${mainUrl}/category/suc-filmleri-izle"           to "SuÃ§",
+        "${mainUrl}/category/tarih-filmleri-izle"         to "Tarih",
+        "${mainUrl}/category/western-filmleri-izle"       to "Western"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val headers = mapOf(
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Referer" to "https://fullhdfilm2.us:443/login_up.php/"
-            )
-        val baseUrl = request.data
-        val urlpage = if (page == 1) baseUrl else "$baseUrl/page/$page"
-        val document = app.get(urlpage, headers=headers).document
-        val home     = document.select("div.movie-poster").mapNotNull { it.toMainPageResult() }
+        val url = if (page == 1) request.data else "${request.data}/page/${page}"
+        val document = app.get(url).document
+        val movieBoxes = document.select("div.movie-poster")
+        val home = movieBoxes.mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toMainPageResult(): SearchResponse? {
-        val title     = this.selectFirst("img")?.attr("alt")?.trim() ?: return null
+    private fun Element.toSearchResult(): SearchResponse? {
+        val title     = this.selectFirst("img")?.attr("alt") ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
         val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
 
@@ -81,7 +66,7 @@ class FullHDFilm : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/?s=${query}").document
 
-        return document.select("div.movie-poster").mapNotNull { it.toMainPageResult() }
+        return document.select("div.movie-poster").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -90,73 +75,88 @@ class FullHDFilm : MainAPI() {
         val document = app.get(url).document
     
         val title       = document.selectFirst("h1")?.text() ?: return null
-    
         val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src"))
-        val description = document.select("#details > div:nth-child(2) > div").text().trim()
-        val tags        = document.select("h4 a").map { it.text() }
-        val year        = Regex("""(\d+)""").find(document.selectFirst("div.release")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        val actors = document.selectFirst("div.oyuncular")?.ownText() ?.split(",") ?.map { Actor(it.trim()) } ?: emptyList()
-    
+        val description = document.selectFirst("div.film")?.text()?.trim() ?: document.selectFirst("meta[property='og:description']")?.attr("content")?.trim()
+        val tags        = document.select("div.tur.info a").map { it.text() }
+        val year        = Regex("""(\d{4})""").find(document.selectFirst("div.yayin-tarihi.info")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
+        val actors      = document.selectFirst("div.oyuncular")?.ownText()?.split(",")?.map { Actor(it.trim()) } ?: emptyList()
+        val rating      = document.selectFirst("div.imdb")?.text()?.let { Regex("""IMDb\s*([\d\.]+)""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+
+        val isSeries = url.lowercase().contains("-dizi") || tags.any { it.lowercase().contains("dizi") }
+
+        if (isSeries) {
+            val episodes = document.select("li.psec").mapNotNull { el ->
+                val partId = el.attr("id")
+                val partName = el.text().trim()
+                if (partName.lowercase().contains("fragman")) return@mapNotNull null
+                
+                // Basit Sezon/BÃ¶lÃ¼m Ã§Ä±karÄ±mÄ±
+                val s = Regex("""(\d+)\.\s*Sezon""").find(partName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                val e = Regex("""(\d+)\.\s*BÃ¶lÃ¼m""").find(partName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+                newEpisode(url) {
+                    this.name = partName
+                    this.season = s
+                    this.episode = e
+                }
+            }
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+                this.year = year
+                this.plot = description
+                this.tags = tags
+                this.actors = actors.map { ActorData(it) }
+            }
+        }
+
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.year = year
             this.plot = description
             this.tags = tags
-            addActors(actors)
+            this.rating = rating
+            this.actors = actors.map { ActorData(it) }
         }
     }
 
     private fun getIframe(sourceCode: String): String {
-        // Base64 kodlu iframe'i içeren script bloğunu yakala
+        // Base64 kodlu iframe'i iÃ§eren script bloÄŸunu yakala
         val base64ScriptRegex = Regex("""<script[^>]*>(PCEtLWJhc2xpazp[^<]*)</script>""")
         val base64Encoded = base64ScriptRegex.find(sourceCode)?.groupValues?.get(1) ?: return ""
     
         return try {
             // Base64 decode
             val decodedHtml = String(Base64.decode(base64Encoded, Base64.DEFAULT), Charsets.UTF_8)
-    
-            // Jsoup ile parse edip iframe src'sini al
-            val iframeSrc = Jsoup.parse(decodedHtml).selectFirst("iframe")?.attr("src")
-    
-            fixUrlNull(iframeSrc) ?: ""
-        } catch (_: Exception) {
+            // Decode edilmiÅŸ HTML iÃ§inden iframe src'sini bul
+            val iframeMatch = Regex("""src=["']([^"']+)["']""").find(decodedHtml)
+            iframeMatch?.groupValues?.get(1) ?: ""
+        } catch (e: Exception) {
+            Log.e("FHDF", "Base64 decode error", e)
             ""
         }
     }
 
     private fun extractSubtitleUrl(sourceCode: String): String? {
-        // playerjsSubtitle değişkenini regex ile bul (genelleştirilmiş)
         val patterns = listOf(
-            Pattern.compile("var playerjsSubtitle = \"\\[Türkçe](https?://[^\\s\"]+?\\.srt)\";"),
-            Pattern.compile("var playerjsSubtitle = \"(https?://[^\\s\"]+?\\.srt)\";"), // Türkçe etiketi olmadan
-            Pattern.compile("subtitle:\\s*\"(https?://[^\\s\"]+?\\.srt)\"") // Alternatif subtitle formatı
+            Pattern.compile("var playerjsSubtitle = \"\\[TÃ¼rkÃ§e\\](https?://[^\\s\"]+?\\.srt)\""),
+            Pattern.compile("var playerjsSubtitle = \"(https?://[^\\s\"]+?\\.srt)\""),
+            Pattern.compile("subtitle:\\s*\"(https?://[^\\s\"]+?\\.srt)\"")
         )
         for (pattern in patterns) {
             val matcher = pattern.matcher(sourceCode)
-            if (matcher.find()) {
-                val subtitleUrl = matcher.group(1)
-                Log.d("FHDF", "Found subtitle URL: $subtitleUrl")
-                return subtitleUrl
-            }
+            if (matcher.find()) return matcher.group(1)
         }
-        Log.d("FHDF", "No subtitle URL found in source code")
         return null
     }
 
     private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
         if (iframeUrl.isEmpty()) return null
-        try {
-            val headers = mapOf(
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-                "Referer" to mainUrl
-            )
+        return try {
+            val headers = mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
             val iframeResponse = app.get(iframeUrl, headers=headers)
-            val iframeSource = iframeResponse.text
-            Log.d("FHDF", "Iframe source length: ${iframeSource.length}")
-            return extractSubtitleUrl(iframeSource)
+            extractSubtitleUrl(iframeResponse.text)
         } catch (e: Exception) {
-            Log.d("FHDF", "Iframe subtitle extraction error: ${e.message}")
-            return null
+            null
         }
     }
 
@@ -166,47 +166,113 @@ class FullHDFilm : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("FHDF", "data » $data")
-
         val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
             "Referer" to mainUrl
         )
-        val response = app.get(data, headers=headers)
-        val sourceCode = response.text
-        Log.d("FHDF", "Source code length: ${sourceCode.length}")
 
-        // Ana sayfadan altyazı URL’sini çek
-        var subtitleUrl = extractSubtitleUrl(sourceCode)
+        val mainDoc = app.get(data, headers=headers).document
+        
+        // Dublaj/AltyazÄ± alternatiflerini bul
+        val pageLinks = mutableListOf<Pair<String, String>>()
+        pageLinks.add("Ana Sunucu" to data) // Mevcut sayfa (genellikle dublaj)
 
-        // Iframe’den altyazı URL’sini çek
-        val iframeSrc = getIframe(sourceCode)
-        Log.d("FHDF", "iframeSrc: $iframeSrc")
-        if (subtitleUrl == null && iframeSrc.isNotEmpty()) {
-            subtitleUrl = extractSubtitleFromIframe(iframeSrc)
-        }
-
-        // Altyazı bulunursa subtitleCallback ile gönder
-        if (subtitleUrl != null) {
-            try {
-                // Altyazı URL’sinin erişilebilirliğini kontrol et
-                val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
-                if (subtitleResponse.isSuccessful) {
-                    subtitleCallback(newSubtitleFile("Türkçe", subtitleUrl))
-                    Log.d("FHDF", "Subtitle added: $subtitleUrl")
+        // DiÄŸer sayfalarÄ± (altyazÄ± vb.) bul
+        mainDoc.select("div#action-parts a[href]").forEach {
+            val href = it.attr("href")
+            val linkText = it.text().trim()
+            if (href.contains("?page=")) {
+                val linkUrl = if (href.startsWith("?")) {
+                    "${data.split("?")[0].removeSuffix("/")}$href"
                 } else {
-                    Log.d("FHDF", "Subtitle URL inaccessible: ${subtitleResponse.code}")
+                    fixUrlNull(href)
                 }
-            } catch (e: Exception) {
-                Log.d("FHDF", "Subtitle URL error: ${e.message}")
+                if (linkUrl != null && !pageLinks.any { p -> p.second == linkUrl }) {
+                    pageLinks.add(linkText to linkUrl)
+                }
             }
         }
 
-        if (iframeSrc.isNotEmpty()) {
-            loadExtractor(iframeSrc, mainUrl, subtitleCallback, callback) // iframe'e yönlendir
-            return true
+        Log.d("FHDF", "Pages to process: ${pageLinks.map { it.second }}")
+        var foundLinks = false
+
+        for ((name, pageUrl) in pageLinks) {
+            val sourceName = if (name.isBlank() || name == "Ana Sunucu") "Vidpapi" else "Vidpapi - $name"
+            
+            try {
+                val response = app.get(pageUrl, headers=headers)
+                val sourceCode = response.text
+
+                // Ana sayfadan altyazÄ± URLâ€™sini Ã§ek
+                var subtitleUrl = extractSubtitleUrl(sourceCode)
+
+                // Iframeâ€™den URLâ€™yi Ã§ek
+                val iframeSrc = getIframe(sourceCode)
+                Log.d("FHDF", "iframeSrc for $pageUrl: $iframeSrc")
+
+                if (subtitleUrl == null && iframeSrc.isNotEmpty()) {
+                    subtitleUrl = extractSubtitleFromIframe(iframeSrc)
+                }
+
+                // AltyazÄ± bulunduysa ekle
+                if (subtitleUrl != null) {
+                    try {
+                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
+                        if (subtitleResponse.isSuccessful) {
+                            @Suppress("DEPRECATION")
+                            subtitleCallback(com.lagradost.cloudstream3.SubtitleFile("TÃ¼rkÃ§e", subtitleUrl))
+                            Log.d("FHDF", "Subtitle added: $subtitleUrl")
+                        }
+                    } catch (e: Exception) {
+                        Log.d("FHDF", "Subtitle URL error: ${e.message}")
+                    }
+                }
+
+                if (iframeSrc.contains("vidpapi.xyz")) {
+                    val videoId = iframeSrc.split("/").lastOrNull() ?: continue
+                    val iframeResponse = app.get(iframeSrc, headers=mapOf(
+                        "User-Agent" to headers["User-Agent"]!!,
+                        "Referer" to mainUrl
+                    ))
+                    
+                    val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
+                    Log.d("FHDF", "Vidpapi cookie: $fpCookie")
+
+                    val apiURL = "https://vidpapi.xyz/player/index.php?data=$videoId&do=getVideo"
+                    val apiHeaders = mapOf(
+                        "User-Agent" to headers["User-Agent"]!!,
+                        "Referer" to iframeSrc,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                        "Cookie" to "fireplayer_player=$fpCookie"
+                    )
+
+                    val apiResponse = app.post(apiURL, headers=apiHeaders, data=mapOf("data" to videoId, "do" to "getVideo"))
+                    val securedLink = Regex("""securedLink":"([^"]+)""").find(apiResponse.text)?.groupValues?.get(1)?.replace("\\/", "/")
+                    
+                    if (securedLink != null && securedLink.isNotBlank()) {
+                        Log.d("FHDF", "Found M3U8: $securedLink")
+                        callback(newExtractorLink(
+                            sourceName,
+                            sourceName,
+                            securedLink,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            referer = mainUrl
+                        })
+                        foundLinks = true
+                    }
+                } else if (iframeSrc.isNotEmpty()) {
+                    // DiÄŸer extractors (vidmoly vb.)
+                    if (loadExtractor(iframeSrc, data, subtitleCallback, callback)) {
+                        foundLinks = true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("FHDF", "Error loading links for $pageUrl", e)
+            }
         }
 
-        return false
+        return foundLinks
     }
 }
