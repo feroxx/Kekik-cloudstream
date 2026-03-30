@@ -235,7 +235,7 @@ override suspend fun loadLinks(
     val ogVideo = document.selectFirst("iframe")?.attr("abs:src")
         ?: return loadExtractor(data, data, subtitleCallback, callback) // Fallback to loadExtractor if no og:video
 
-    val playerDoc = app.get(ogVideo, headers = getHeaders(data)).document
+    val playerDoc = app.get("${mainUrl.removeSuffix("/")}//${ogVideo.removePrefix("/")}", headers = getHeaders(data)).document
     val jwScript = playerDoc.select("script").firstOrNull { it.html().contains("jwplayer") && it.html().contains("sources") }
         ?: return loadExtractor(ogVideo, data, subtitleCallback, callback) // Fallback to loadExtractor if no JW script
 
