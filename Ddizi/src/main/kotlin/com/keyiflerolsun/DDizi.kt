@@ -232,7 +232,7 @@ override suspend fun loadLinks(
 }
 
     // Proceed to og:video extraction if YouTube iframe is not present or fails
-    val ogVideo = document.selectFirst("meta[property=og:video]")?.attr("content")
+    val ogVideo = document.selectFirst("iframe")?.attr("abs:src")
         ?: return loadExtractor(data, data, subtitleCallback, callback) // Fallback to loadExtractor if no og:video
 
     val playerDoc = app.get(ogVideo, headers = getHeaders(data)).document
