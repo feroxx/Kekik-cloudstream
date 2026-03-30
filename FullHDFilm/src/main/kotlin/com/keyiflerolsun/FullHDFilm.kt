@@ -1,4 +1,4 @@
-// ! Bu araÃ§ @keyiflerolsun tarafÄ±ndan | @KekikAkademi iÃ§in yazÄ±lmÄ±ÅŸtÄ±r.
+// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 package com.keyiflerolsun
 
@@ -19,7 +19,7 @@ class FullHDFilm : MainAPI() {
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/tur/turkce-altyazili-film-izle"       to "AltyazÄ±lÄ± Filmler",
+        "${mainUrl}/tur/turkce-altyazili-film-izle"       to "Altyazılı Filmler",
         "${mainUrl}/tur/netflix-filmleri-izle/"		       to "Netflix",
         "${mainUrl}/tur/yerli-film-izle"		           to "Yerli Film",
         "${mainUrl}/category/aile-filmleri-izle"	       to "Aile",
@@ -32,16 +32,16 @@ class FullHDFilm : MainAPI() {
         "${mainUrl}/category/fantastik-filmler-izle"      to "Fantastik",
         "${mainUrl}/category/gerilim-filmleri-izle"       to "Gerilim",
         "${mainUrl}/category/gizem-filmleri-izle"	       to "Gizem",
-        "${mainUrl}/category/kisa"	                       to "KÄ±sa",
+        "${mainUrl}/category/kisa"	                       to "Kısa",
         "${mainUrl}/category/komedi-filmleri-izle"	       to "Komedi",
         "${mainUrl}/category/korku-filmleri-izle"	       to "Korku",
         "${mainUrl}/category/macera-filmleri-izle"	       to "Macera",
-        "${mainUrl}/category/muzik"	                       to "MÃ¼zik",
-        "${mainUrl}/category/muzikal-filmleri-izle"	       to "MÃ¼zikal",
+        "${mainUrl}/category/muzik"	                       to "Müzik",
+        "${mainUrl}/category/muzikal-filmleri-izle"	       to "Müzikal",
         "${mainUrl}/category/romantik-filmler-izle"       to "Romantik",
-        "${mainUrl}/category/savas-filmleri-izle"         to "SavaÅŸ",
+        "${mainUrl}/category/savas-filmleri-izle"         to "Savaş",
         "${mainUrl}/category/spor-filmleri-izle"          to "Spor",
-        "${mainUrl}/category/suc-filmleri-izle"           to "SuÃ§",
+        "${mainUrl}/category/suc-filmleri-izle"           to "Suç",
         "${mainUrl}/category/tarih-filmleri-izle"         to "Tarih",
         "${mainUrl}/category/western-filmleri-izle"       to "Western"
     )
@@ -90,9 +90,9 @@ class FullHDFilm : MainAPI() {
                 val partName = el.text().trim()
                 if (partName.lowercase().contains("fragman")) return@mapNotNull null
                 
-                // Basit Sezon/BÃ¶lÃ¼m Ã§Ä±karÄ±mÄ±
+                // Basit Sezon/Bölüm çıkarımı
                 val s = Regex("""(\d+)\.\s*Sezon""").find(partName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                val e = Regex("""(\d+)\.\s*BÃ¶lÃ¼m""").find(partName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                val e = Regex("""(\d+)\.\s*Bölüm""").find(partName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
 
                 newEpisode(url) {
                     this.name = partName
@@ -120,14 +120,14 @@ class FullHDFilm : MainAPI() {
     }
 
     private fun getIframe(sourceCode: String): String {
-        // Base64 kodlu iframe'i iÃ§eren script bloÄŸunu yakala
+        // Base64 kodlu iframe'i içeren script bloğunu yakala
         val base64ScriptRegex = Regex("""<script[^>]*>(PCEtLWJhc2xpazp[^<]*)</script>""")
         val base64Encoded = base64ScriptRegex.find(sourceCode)?.groupValues?.get(1) ?: return ""
     
         return try {
             // Base64 decode
             val decodedHtml = String(Base64.decode(base64Encoded, Base64.DEFAULT), Charsets.UTF_8)
-            // Decode edilmiÅŸ HTML iÃ§inden iframe src'sini bul
+            // Decode edilmiş HTML içinden iframe src'sini bul
             val iframeMatch = Regex("""src=["']([^"']+)["']""").find(decodedHtml)
             iframeMatch?.groupValues?.get(1) ?: ""
         } catch (e: Exception) {
@@ -138,7 +138,7 @@ class FullHDFilm : MainAPI() {
 
     private fun extractSubtitleUrl(sourceCode: String): String? {
         val patterns = listOf(
-            Pattern.compile("var playerjsSubtitle = \"\\[TÃ¼rkÃ§e\\](https?://[^\\s\"]+?\\.srt)\""),
+            Pattern.compile("var playerjsSubtitle = \"\\[Türkçe\\](https?://[^\\s\"]+?\\.srt)\""),
             Pattern.compile("var playerjsSubtitle = \"(https?://[^\\s\"]+?\\.srt)\""),
             Pattern.compile("subtitle:\\s*\"(https?://[^\\s\"]+?\\.srt)\"")
         )
@@ -173,11 +173,11 @@ class FullHDFilm : MainAPI() {
 
         val mainDoc = app.get(data, headers=headers).document
         
-        // Dublaj/AltyazÄ± alternatiflerini bul
+        // Dublaj/Altyazı alternatiflerini bul
         val pageLinks = mutableListOf<Pair<String, String>>()
         pageLinks.add("Ana Sunucu" to data) // Mevcut sayfa (genellikle dublaj)
 
-        // DiÄŸer sayfalarÄ± (altyazÄ± vb.) bul
+        // Diğer sayfaları (altyazı vb.) bul
         mainDoc.select("div#action-parts a[href]").forEach {
             val href = it.attr("href")
             val linkText = it.text().trim()
@@ -203,10 +203,10 @@ class FullHDFilm : MainAPI() {
                 val response = app.get(pageUrl, headers=headers)
                 val sourceCode = response.text
 
-                // Ana sayfadan altyazÄ± URLâ€™sini Ã§ek
+                // Ana sayfadan altyazı URL’sini çek
                 var subtitleUrl = extractSubtitleUrl(sourceCode)
 
-                // Iframeâ€™den URLâ€™yi Ã§ek
+                // Iframe’den URL’yi çek
                 val iframeSrc = getIframe(sourceCode)
                 Log.d("FHDF", "iframeSrc for $pageUrl: $iframeSrc")
 
@@ -214,13 +214,13 @@ class FullHDFilm : MainAPI() {
                     subtitleUrl = extractSubtitleFromIframe(iframeSrc)
                 }
 
-                // AltyazÄ± bulunduysa ekle
+                // Altyazı bulunduysa ekle
                 if (subtitleUrl != null) {
                     try {
                         val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
                         if (subtitleResponse.isSuccessful) {
                             @Suppress("DEPRECATION")
-                            subtitleCallback(com.lagradost.cloudstream3.SubtitleFile("TÃ¼rkÃ§e", subtitleUrl))
+                            subtitleCallback(com.lagradost.cloudstream3.SubtitleFile("Türkçe", subtitleUrl))
                             Log.d("FHDF", "Subtitle added: $subtitleUrl")
                         }
                     } catch (e: Exception) {
@@ -263,7 +263,7 @@ class FullHDFilm : MainAPI() {
                         foundLinks = true
                     }
                 } else if (iframeSrc.isNotEmpty()) {
-                    // DiÄŸer extractors (vidmoly vb.)
+                    // Diğer extractors (vidmoly vb.)
                     if (loadExtractor(iframeSrc, data, subtitleCallback, callback)) {
                         foundLinks = true
                     }
