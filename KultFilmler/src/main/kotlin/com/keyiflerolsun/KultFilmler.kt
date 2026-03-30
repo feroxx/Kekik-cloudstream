@@ -6,6 +6,7 @@ import android.util.Log
 import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.network.CloudflareKiller
@@ -213,54 +214,120 @@ private fun extractSubtitleUrl(sourceCode: String): String? {
         val iframes  = mutableSetOf<String>()
 
         val mainFrame = getIframe(document.html())
-        iframes.add(mainFrame)
+        if (mainFrame.isNotEmpty()) {
+            iframes.add(mainFrame)
+        }
 
-        document.select("div.container#player").forEach {
-            val alternatif = it.selectFirst("iframe")?.attr("src")
-            if (alternatif != null) {
-                val alternatifDocument = app.get(alternatif).document
-                val alternatifFrame    = getIframe(alternatifDocument.html())
-                iframes.add(alternatifFrame)
+        document.select("a.alternatif").forEach {
+            val altUrl = fixUrlNull(it.attr("href"))
+            if (altUrl != null && altUrl != data) {
+                try {
+                    val altDoc = app.get(altUrl).document
+                    val altFrame = getIframe(altDoc.html())
+                    if (altFrame.isNotEmpty()) {
+                        iframes.add(altFrame)
+                    }
+                    val inlineFrame = altDoc.selectFirst("div.container#player iframe")?.attr("src")
+                    if (inlineFrame != null) {
+                        iframes.add(inlineFrame)
+                    }
+                } catch (e: Exception) {
+                    Log.d("KLT", "Error fetching alt URL: $altUrl")
+                }
             }
         }
+
+        var foundLinks = false
 
         for (iframe in iframes) {
             Log.d("KLT", "iframe » $iframe")
             if (iframe.contains("vidmoly")) {
                 val headers  = mapOf(
-                    "User-Agent"     to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
+                    "User-Agent"     to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
                     "Sec-Fetch-Dest" to "iframe"
                 )
-                val iSource = app.get(iframe, headers=headers, referer="${mainUrl}/").text
-                val m3uLink = Regex("""file:"([^"]+)""").find(iSource)?.groupValues?.get(1) ?: throw ErrorLoadingException("m3u link not found")
+                try {
+                    val iSource = app.get(iframe, headers=headers, referer="${mainUrl}/").text
+                    val m3uLink = Regex("""file:"([^"]+)""").find(iSource)?.groupValues?.get(1)
 
-                Log.d("Kekik_VidMoly", "m3uLink » $m3uLink")
+                    if (m3uLink != null) {
+                        Log.d("Kekik_VidMoly", "m3uLink » $m3uLink")
+                        callback.invoke(
+                            newExtractorLink(
+                                source  = "VidMoly",
+                                name    = "VidMoly",
+                                url     = m3uLink,
+                                type    = INFER_TYPE
+                            ) {
+                                referer = mainUrl
+                                quality = Qualities.Unknown.value
+                            }
+                        )
+                        foundLinks = true
+                    }
+                } catch (e: Exception) {
+                    Log.d("KLT", "VidMoly error: ${e.message}")
+                }
+            } else if (iframe.contains("vidpapi.xyz") || iframe.contains("vidpapi.com")) {
+                val videoId = iframe.split("/").lastOrNull() ?: continue
+                try {
+                    val iframeResponse = app.get(iframe, headers=mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                        "Referer" to mainUrl
+                    ))
+                    
+                    val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
+                    Log.d("KLT", "Vidpapi cookie: $fpCookie")
 
-                callback.invoke(
-                    newExtractorLink(
-                        source  = "VidMoly",
-                        name    = "VidMoly",
-                        url     = m3uLink,
-                        type    = INFER_TYPE
-            ) {
-                quality = Qualities.Unknown.value
-            }
-                )
-            } else {
-            // Extract subtitle for other iframes
-            val subtitleUrl = extractSubtitleFromIframe(data)
-            if (subtitleUrl != null) {
-                subtitleCallback.invoke(
-                    newSubtitleFile(
-                        lang = "Türkçe",
-                        url = subtitleUrl
+                    val apiURL = "https://vidpapi.xyz/player/index.php?data=$videoId&do=getVideo"
+                    val apiHeaders = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                        "Referer" to iframe,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                        "Cookie" to "fireplayer_player=$fpCookie"
                     )
-                )
-            }
-                loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
+
+                    val apiResponse = app.post(apiURL, headers=apiHeaders, data=mapOf("data" to videoId, "do" to "getVideo"))
+                    val securedLink = Regex("""securedLink":"([^"]+)""").find(apiResponse.text)?.groupValues?.get(1)?.replace("\\/", "/")
+                    
+                    if (securedLink != null && securedLink.isNotBlank()) {
+                        Log.d("KLT", "Found M3U8: $securedLink")
+                        callback.invoke(
+                            newExtractorLink(
+                                source = "Vidpapi",
+                                name = "Vidpapi",
+                                url = securedLink,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                referer = mainUrl
+                            }
+                        )
+                        foundLinks = true
+                    }
+
+                    // Extract subtitles from the initial iframe response if any
+                    val subtitleUrl = extractSubtitleUrl(iframeResponse.text)
+                    if (subtitleUrl != null) {
+                        @Suppress("DEPRECATION")
+                        subtitleCallback.invoke(SubtitleFile("Türkçe", subtitleUrl))
+                    }
+                } catch (e: Exception) {
+                    Log.d("KLT", "Vidpapi error: ${e.message}")
+                }
+            } else {
+                // Extract subtitle for other iframes
+                val subtitleUrl = extractSubtitleFromIframe(iframe)
+                if (subtitleUrl != null) {
+                    @Suppress("DEPRECATION")
+                    subtitleCallback.invoke(SubtitleFile("Türkçe", subtitleUrl))
+                }
+                if (loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)) {
+                    foundLinks = true
+                }
             }
         }
 
-        return true
+        return foundLinks
     }
 }
