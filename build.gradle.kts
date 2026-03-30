@@ -64,7 +64,7 @@ subprojects {
                         "-Xno-param-assertions",
                         "-Xno-receiver-assertions",
                         "-XXLanguage:+PropertyParamAnnotationDefaultTargetMode",
-                        "-Xcontext-receivers"
+                        "-Xcontext-parameters"
                     )
                 )
             }
