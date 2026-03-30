@@ -24,8 +24,8 @@ class KultFilmler : MainAPI() {
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 	
-    // ! CloudFlare bypass
-    override var sequentialMainPage = true        
+	    // ! CloudFlare bypass
+    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/library/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
     override var sequentialMainPageDelay       = 150L  // ? 0.15 saniye
     override var sequentialMainPageScrollDelay = 150L  // ? 0.15 saniye
 
@@ -78,8 +78,8 @@ class KultFilmler : MainAPI() {
         val document = app.get(request.data).document
         val movieBoxes = document.select("div.col-md-12 div.movie-box")
         val home = movieBoxes.mapNotNull { 
-            it.toSearchResult() 
-        }
+        it.toSearchResult() 
+    }
 
         return newHomePageResponse(request.name, home)
     }
@@ -100,6 +100,7 @@ class KultFilmler : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}?s=${query}").document
+
         return document.select("div.movie-box").mapNotNull { it.toSearchResult() }
     }
 
@@ -157,44 +158,40 @@ class KultFilmler : MainAPI() {
     }
 
     private fun getIframe(sourceCode: String): String {
-        // Base64 şifreli versiyonu deniyoruz
-        val atob = Regex("""PHA\+[0-9a-zA-Z+/=]*""").find(sourceCode)?.value
-        
-        if (atob != null) {
-            try {
-                val padding = 4 - atob.length % 4
-                val atobPadded = if (padding < 4) atob.padEnd(atob.length + padding, '=') else atob
-                val decodedHtml = String(Base64.decode(atobPadded, Base64.DEFAULT), Charsets.UTF_8)
-                val iframeSrc = Jsoup.parse(decodedHtml).selectFirst("iframe")?.attr("src")
-                if (!iframeSrc.isNullOrEmpty()) return fixUrlNull(iframeSrc) ?: ""
-            } catch (e: Exception) {
-                Log.d("KLT", "Base64 decode hatası: ${e.message}")
-            }
-        }
+        // val atobKey = Regex("""atob\("(.*)"\)""").find(sourceCode)?.groupValues?.get(1) ?: return ""
 
-        // Şifreli değilse veya yukarıdaki işlem başarısız olursa standart iframe ara
-        val normalIframe = Jsoup.parse(sourceCode).selectFirst("iframe")?.attr("src")
-        return normalIframe?.let { fixUrlNull(it) } ?: ""
+        // return Jsoup.parse(String(Base64.decode(atobKey))).selectFirst("iframe")?.attr("src") ?: ""
+
+        val atob = Regex("""PHA\+[0-9a-zA-Z+/=]*""").find(sourceCode)?.value ?: return ""
+
+        val padding    = 4 - atob.length % 4
+        val atobPadded = if (padding < 4) atob.padEnd(atob.length + padding, '=') else atob
+
+        val iframe = Jsoup.parse(String(Base64.decode(atobPadded, Base64.DEFAULT), Charsets.UTF_8))
+
+        return fixUrlNull(iframe.selectFirst("iframe")?.attr("src")) ?: ""
     }
-
-    private fun extractSubtitleUrl(sourceCode: String): String? {
-        Log.d("KLT", "Source code length: ${sourceCode.length}")
-        
-        // Basit pattern ile test
-        val pattern = Pattern.compile("(https?://[^\"\\s]+\\.srt)")
-        val matcher = pattern.matcher(sourceCode)
-        
-        if (matcher.find()) {
-            val subtitleUrl = matcher.group(1)
-            Log.d("KLT", "Found subtitle URL: $subtitleUrl")
-            return subtitleUrl
-        }
-        
-        Log.d("KLT", "No subtitle URL found in source code")
-        return null
+private fun extractSubtitleUrl(sourceCode: String): String? {
+    Log.d("KLT", "Source code length: ${sourceCode.length}")
+    Log.d("KLT", "Source code contains 'playerjsSubtitle': ${sourceCode.contains("playerjsSubtitle")}")
+    Log.d("KLT", "Source code contains '.srt': ${sourceCode.contains(".srt")}")
+    
+    // Basit pattern ile test
+    val pattern = Pattern.compile("(https?://[^\"\\s]+\\.srt)")
+    val matcher = pattern.matcher(sourceCode)
+    
+    if (matcher.find()) {
+        val subtitleUrl = matcher.group(1)
+        Log.d("KLT", "Found subtitle URL: $subtitleUrl")
+        return subtitleUrl
     }
-
-    private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
+    
+    // Bulunamazsa kaynak kodun bir kısmını logla
+    Log.d("KLT", "First 500 chars of source: ${sourceCode.take(500)}")
+    Log.d("KLT", "No subtitle URL found in source code")
+    return null
+}
+       private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
         if (iframeUrl.isEmpty()) return null
         try {
             val headers = mapOf(
@@ -203,42 +200,55 @@ class KultFilmler : MainAPI() {
             )
             val iframeResponse = app.get(iframeUrl, headers=headers)
             val iframeSource = iframeResponse.text
+		Log.d("KLT", "iframeSource » $iframeSource")
             return extractSubtitleUrl(iframeSource)
         } catch (e: Exception) {
-            Log.d("KLT", "Subtitle extraction error: ${e.message}")
             return null
         }
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("KLT", "İşlenen data » $data")
+        Log.d("KLT", "data » $data")
         val document = app.get(data).document
         val iframes  = mutableSetOf<String>()
 
-        // 1. Ana iframe'i bul
         val mainFrame = getIframe(document.html())
-        if (mainFrame.isNotEmpty()) iframes.add(mainFrame)
+        iframes.add(mainFrame)
 
-        // 2. Alternatif iframe'leri bul
         document.select("div.container#player").forEach {
             val alternatif = it.selectFirst("iframe")?.attr("src")
             if (alternatif != null) {
                 val alternatifDocument = app.get(alternatif).document
                 val alternatifFrame    = getIframe(alternatifDocument.html())
-                if (alternatifFrame.isNotEmpty()) iframes.add(alternatifFrame)
+                iframes.add(alternatifFrame)
             }
         }
 
-        if (iframes.isEmpty()) {
-            Log.d("KLT", "İşlenecek hiçbir iframe bulunamadı!")
-            return false
-        }
-
         for (iframe in iframes) {
-            Log.d("KLT", "Şu anki iframe » $iframe")
-            
-            // Asıl oynatıcının kaynak kodundan alt yazıyı çıkar
-            val subtitleUrl = extractSubtitleFromIframe(iframe) 
+            Log.d("KLT", "iframe » $iframe")
+            if (iframe.contains("vidmoly")) {
+                val headers  = mapOf(
+                    "User-Agent"     to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
+                    "Sec-Fetch-Dest" to "iframe"
+                )
+                val iSource = app.get(iframe, headers=headers, referer="${mainUrl}/").text
+                val m3uLink = Regex("""file:"([^"]+)""").find(iSource)?.groupValues?.get(1) ?: throw ErrorLoadingException("m3u link not found")
+
+                Log.d("Kekik_VidMoly", "m3uLink » $m3uLink")
+
+                callback.invoke(
+                    newExtractorLink(
+                        source  = "VidMoly",
+                        name    = "VidMoly",
+                        url     = m3uLink,
+                        type    = INFER_TYPE
+            ) {
+                quality = Qualities.Unknown.value
+            }
+                )
+            } else {
+            // Extract subtitle for other iframes
+            val subtitleUrl = extractSubtitleFromIframe(data)
             if (subtitleUrl != null) {
                 subtitleCallback.invoke(
                     newSubtitleFile(
@@ -247,38 +257,6 @@ class KultFilmler : MainAPI() {
                     )
                 )
             }
-
-            if (iframe.contains("vidmoly")) {
-                try {
-                    val headers  = mapOf(
-                        "User-Agent"     to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-                        "Sec-Fetch-Dest" to "iframe"
-                    )
-                    val iSource = app.get(iframe, headers=headers, referer="${mainUrl}/").text
-                    
-                    // Esnetilmiş Regex yapısı
-                    val m3uLink = Regex("""file\s*:\s*["']([^"']+)["']""").find(iSource)?.groupValues?.get(1) 
-                        ?: throw ErrorLoadingException("Vidmoly içinde m3u linki bulunamadı")
-
-                    Log.d("Kekik_VidMoly", "m3uLink » $m3uLink")
-
-                    callback.invoke(
-                        newExtractorLink(
-                            source  = "VidMoly",
-                            name    = "VidMoly",
-                            url     = m3uLink,
-                            referer = iframe,
-                            type    = INFER_TYPE
-                        ) {
-                            quality = Qualities.Unknown.value
-                        }
-                    )
-                } catch (e: Exception) {
-                    Log.d("KLT", "Vidmoly özel yakalama patladı, standart extractor'a geçiliyor. Hata: ${e.message}")
-                    loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
-                }
-            } else {
-                // Diğer tüm oynatıcılar (veya başarısız Vidmoly) için standart extractor'ı çağır
                 loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
             }
         }
