@@ -269,7 +269,7 @@ override suspend fun loadLinks(
     )
 
     if (isHls) {
-        M3u8Helper.generateM3u8(name, fileUrl, mainUrl.trimEnd('//') + "/" + ogVideo.trimStart('/'), headers = videoHeaders).forEach(callback)
+        M3u8Helper.generateM3u8(name, fileUrl, mainUrl.trimEnd('//') + "//" + ogVideo.trimStart('/'), headers = videoHeaders).forEach(callback)
     }
 
     return true
