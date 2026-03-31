@@ -74,7 +74,7 @@ class HDFilmCehennemi : MainAPI() {
         "${mainUrl}/load/page/sayfano/home/"                                       to "Yeni Eklenen Filmler",
         //"${mainUrl}/load/page/sayfano/categories/nette-ilk-filmler/"               to "Nette İlk Filmler",
         "${mainUrl}/load/page/sayfano/home-series/"                                to "Yeni Eklenen Diziler",
-        "${mainUrl}/load/page/sayfano/categories/tavsiye-filmler-izle2/"           to "Tavsiye Filmler",
+        "${mainUrl}/load/page/sayfano/categories/tavsiye-filmler-izle3/"           to "Tavsiye Filmler",
         "${mainUrl}/load/page/sayfano/imdb7/"                                      to "IMDB 7+ Filmler",
         "${mainUrl}/load/page/sayfano/mostCommented/"                              to "En Çok Yorumlananlar",
         "${mainUrl}/load/page/sayfano/mostLiked/"                                  to "En Çok Beğenilenler",
@@ -204,41 +204,38 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-    /**
-     * Güncel CloseLoad / Playmix Deşifre Algoritması
-     */
-    private fun dcHello(parts: List<String>): String {
-        // 1. Birleştir
-        val joined = parts.joinToString("")
+private fun dcHello(parts: List<String>): String {
+    // 1. Birleştir
+    val joined = parts.joinToString("")
 
-        // 2. ROT13 Uygula
-        val rot = joined.map { c ->
-            when (c) {
-                in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-                in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-                else -> c
-            }
-        }.joinToString("")
+    // 2. Tersine Çevir (YENİ SIRA: İlk işlem bu)
+    val reversed = joined.reversed()
 
-        // 3. Base64 Decode (YENİ SIRA: Önce decode ediyoruz)
-        val decodedBytes = android.util.Base64.decode(rot, android.util.Base64.DEFAULT)
+    // 3. Base64 Decode
+    val decodedBytes = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
 
-        // 4. Byte dizisini tersine çevir (JS'deki split('').reverse().join('') karşılığı)
-        val reversedBytes = decodedBytes.reversedArray()
+    // 4 & 5. ROT13 ve Unmix İşlemlerini tek döngüde hallediyoruz
+    val unmix = StringBuilder()
+    for (i in decodedBytes.indices) {
+        // JS'deki atob() çıktısına birebir uyması için işaretsiz (unsigned) okuyoruz
+        val b = decodedBytes[i].toInt() and 0xFF
+        var c = b.toChar()
 
-        // 5. Unmix (Matematiksel Döngü)
-        val unmix = StringBuilder()
-        for (i in reversedBytes.indices) {
-            // JS'deki charCodeAt(i) 0-255 arası döner.
-            // Kotlin'deki Byte'ı unsigned Int'e çevirmek için "and 0xFF" kullanıyoruz.
-            val charCode = reversedBytes[i].toInt() and 0xFF
-
-            val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
-            unmix.append(newChar.toChar())
+        // ROT13 Uygulama (Sadece ASCII harflerine)
+        if (c in 'a'..'z') {
+            c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+        } else if (c in 'A'..'Z') {
+            c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
         }
 
-        return unmix.toString()
+        // Unmix Matematiksel Döngüsü
+        val charCode = c.code
+        val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
+        unmix.append(newChar.toChar())
     }
+
+    return unmix.toString()
+}
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
