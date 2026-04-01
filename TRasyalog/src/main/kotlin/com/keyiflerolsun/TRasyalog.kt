@@ -72,67 +72,65 @@ class TRasyalog : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        // Başlık Seçimi
-        val title = document.selectFirst("h1[itemprop=name]")?.text()?.trim()
-            ?: document.selectFirst(".t-baslik")?.text()?.trim()
+        val title = document.selectFirst(".afis h1")?.text()?.trim()
             ?: return null
 
-        // Poster Seçimi
         val poster = fixUrlNull(
-            document.selectFirst(".afis img")?.attr("data-src")
-                ?: document.selectFirst(".afis img")?.attr("src")
+            document.selectFirst(".afis img")?.attr("src")
+                ?: document.selectFirst(".afis img")?.attr("data-src")
         )
 
-        // Açıklama (Plot)
-        val description = document.selectFirst(".ozet")?.text()?.trim()
-
-        // Etiketler (Tags)
-        val tags = document.select(".kategori a").mapNotNull {
-            it.text()?.trim()?.takeIf { it.isNotEmpty() }
-        }.distinct().take(5)
+        val description = document.selectFirst(".aciklama")?.text()?.trim()
+        val tags = document.select("[itemprop=name]").mapNotNull { it.text()?.trim() }.distinct()
 
         val episodes = mutableListOf<Episode>()
-
-        // YENİ MİMARİ: Sekme başlıklarını buluyoruz (ör: <li rel="bolum-1">1. Bölüm</li>)
         val tabHeaders = document.select("ul.sekme-baslik li")
 
         if (tabHeaders.isNotEmpty() && tabHeaders.first()?.attr("rel")?.startsWith("bolum") == true) {
-            // Tab (Sekme) yapısı kullanılmışsa
             tabHeaders.forEach { tab ->
-                val targetId = tab.attr("rel") // "bolum-1"
-                if (targetId.isNullOrEmpty()) return@forEach
+                val targetId = tab.attr("rel") // Örn: "bolum-1-2"
+                val epName = tab.text().trim() // Örn: "1-2. Bölüm"
 
-                val epName = tab.text().trim()
-                val epNum = """(\d+)""".toRegex().find(epName)?.groupValues?.get(1)?.toIntOrNull()
+                // "1-2" veya "1 - 2" gibi aralıkları yakalayan regex
+                val rangeMatch = """(\d+)\s*-\s*(\d+)""".toRegex().find(epName)
 
-                // URL'nin sonuna #bolum-1 gibi fragment ekleyerek loadLinks'e paslıyoruz
-                val episodeDataUrl = "$url#$targetId"
+                if (rangeMatch != null) {
+                    val start = rangeMatch.groupValues[1].toInt()
+                    val end = rangeMatch.groupValues[2].toInt()
 
-                episodes.add(newEpisode(episodeDataUrl) {
-                    this.name = epName
-                    this.episode = epNum
-                })
+                    for (i in start..end) {
+                        // Her bölüm için eşsiz bir URL (data) oluşturuyoruz (?ep=X ekleyerek)
+                        val episodeDataUrl = "$url#$targetId?ep=$i"
+                        episodes.add(newEpisode(episodeDataUrl) {
+                            this.name = "$i. Bölüm"
+                            this.episode = i
+                        })
+                    }
+                } else {
+                    // Tekil bölüm durumu (Örn: "3. Bölüm")
+                    val epNum = """(\d+)""".toRegex().find(epName)?.groupValues?.get(1)?.toIntOrNull()
+                    episodes.add(newEpisode("$url#$targetId") {
+                        this.name = epName
+                        this.episode = epNum
+                    })
+                }
             }
         } else {
-            // FALLBACK: Eski tip sayfalarda bölüm linkleri a href ile verilmişse
-            document.select(".bolum-listesi a, #bolumler a, ul.bolumler li a, .dizi-bolumleri a, a[href*=-bolum]").forEach { element ->
+            // Klasik href tabanlı liste yapısı (Fallback)
+            document.select(".bolum-listesi a, #bolumler a, a[href*=-bolum]").forEach { element ->
                 val epUrl = fixUrlNull(element.attr("href")) ?: return@forEach
                 if (epUrl.contains("fragman", ignoreCase = true)) return@forEach
-
                 val epName = element.text().trim()
-                val epNumMatch = """(\d+)""".toRegex().find(epName) ?: """-(\d+)-?bolum""".toRegex().find(epUrl)
-                val epNum = epNumMatch?.groupValues?.get(1)?.toIntOrNull()
-
-                val isFinal = epUrl.contains("final", ignoreCase = true) || epName.contains("final", ignoreCase = true)
-                val finalName = if (isFinal) "Final Bölümü" else "${epNum ?: "Bilinmeyen"}. Bölüm"
+                val epNum = """(\d+)""".toRegex().find(epName)?.groupValues?.get(1)?.toIntOrNull()
 
                 episodes.add(newEpisode(epUrl) {
-                    this.name = finalName
+                    this.name = epName
                     this.episode = epNum
                 })
             }
         }
 
+        // distinctBy artık ?ep= parametresi sayesinde 1. ve 2. bölümleri ayrı ayrı tutacak
         val sortedEpisodes = episodes.distinctBy { it.data }.sortedBy { it.episode ?: Int.MAX_VALUE }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, sortedEpisodes) {
@@ -148,44 +146,33 @@ class TRasyalog : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("TRASYA", "Bölüm yükleniyor (URL): $data")
+        // URL'yi parçala: url#fragment?params
+        // Örn: .../dizi#bolum-1-2?ep=1
+        val fragmentParts = data.split("#")
+        val pageUrl = fragmentParts[0]
 
-        // URL'den asıl sayfa linkini ve hedef tab ID'sini ayırıyoruz
-        val urlParts = data.split("#")
-        val pageUrl = urlParts[0]
-        val targetTabId = if (urlParts.size > 1) urlParts[1] else null
+        // Fragment kısmından hem tab ID'yi hem de varsa parametreyi ayırıyoruz
+        val rawFragment = if (fragmentParts.size > 1) fragmentParts[1] else null
+        val targetTabId = rawFragment?.substringBefore("?")
 
         val document = app.get(pageUrl).document
 
-        // Eğer hedef bir tab ID varsa (ör: bolum-1), sadece o div'in içindeki iframe'leri ara
-        // Eğer yoksa (eski tip listeleme ise), tüm sayfada ara.
-        val targetElement = if (targetTabId != null) {
+        // Hedef div'i seç (Örn: div#bolum-1-2)
+        val targetElement = if (!targetTabId.isNullOrEmpty()) {
             document.selectFirst("div#$targetTabId") ?: document
         } else {
             document
         }
 
-        // 1. İframe'leri bul
-        val iframes = targetElement.select("iframe")
-        iframes.forEach { iframe ->
-            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }.trim()
-            if (src.isNotEmpty()) {
+        // İframe ve data-url kaynaklarını tara
+        targetElement.select("iframe").forEach { element ->
+            val src = element.attr("src").ifBlank {
+                element.attr("data-url").ifBlank { element.attr("data-src") }
+            }.trim()
+
+            if (src.isNotEmpty() && !src.startsWith("javascript")) {
                 val fixedUrl = if (src.startsWith("//")) "https:$src" else src
                 loadExtractor(fixedUrl, pageUrl, subtitleCallback, callback)
-            }
-        }
-
-        // 2. Alternatif kaynakları (data-url gizli playerlar) bul
-        val hiddenUrls = targetElement.select("[data-url]").mapNotNull {
-            it.attr("data-url").trim().takeIf { url -> url.isNotEmpty() }
-        }.distinct()
-
-        hiddenUrls.forEach { url ->
-            val fixedUrl = fixUrlNull(url)?.let {
-                if (it.startsWith("//")) "https:$it" else it
-            }
-            fixedUrl?.let {
-                loadExtractor(it, pageUrl, subtitleCallback, callback)
             }
         }
 
