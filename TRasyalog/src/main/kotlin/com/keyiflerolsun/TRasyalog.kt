@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 
+
 class TRasyalog : MainAPI() {
     override var mainUrl        = "https://asyalog.co"
     override var name           = "AsyaLog"
@@ -44,11 +45,13 @@ class TRasyalog : MainAPI() {
         val href = fixUrlNull(this.selectFirst("a.resim")?.attr("href") 
             ?: this.selectFirst("a.baslik")?.attr("href")) 
             ?: return null
-        
-        val posterUrl = fixUrlNull(
-            this.selectFirst("a.resim img")?.attr("data-src")
-                ?: this.selectFirst("a.resim img")?.attr("src")
-        )
+
+        val posterUrl = this.selectFirst("a.resim img")?.let { img ->
+            fixUrlNull(
+                img.attr("src").takeIf { it.isNotBlank() }
+                    ?: img.attr("data-src")
+            )
+        }
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { 
             this.posterUrl = posterUrl 
@@ -68,128 +71,96 @@ class TRasyalog : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-    
-        val title = document.selectFirst("h1.entry-title, h1.post-title, h1")?.text()?.trim()
+
+        // Başlık Seçimi
+        val title = document.selectFirst("h1[itemprop=name], .t-baslik h1, .dizi-adi h1, h1.entry-title")?.text()?.trim()
             ?: return null
-        
+
+        // Poster Seçimi
         val poster = fixUrlNull(
-            document.selectFirst("img.attachment-large, img.wp-post-image, .post-thumbnail img")?.attr("data-src")
-                ?: document.selectFirst("img.attachment-large, img.wp-post-image, .post-thumbnail img")?.attr("src")
-                ?: document.selectFirst(".series-poster img, .post-featured-image img")?.attr("src")
+            document.selectFirst("img[itemprop=image], .dizi-resim img, .post-thumbnail img")?.attr("data-src")
+                ?: document.selectFirst("img[itemprop=image], .dizi-resim img, .post-thumbnail img")?.attr("src")
         )
-        
-        val description = document.selectFirst("div.entry-content p:first-child, .post-description p, .series-synopsis")?.text()?.trim()
-        
-        val tags = document.select("span.genre, .post-tags a, .series-tags").mapNotNull { 
+
+        // Açıklama (Plot)
+        val description = document.selectFirst("div[itemprop=description], .ozet, .aciklama, .entry-content p")?.text()?.trim()
+
+        // Etiketler (Tags)
+        val tags = document.select(".kategori a, .dizi-bilgi a[href*=kategori], .tur a").mapNotNull {
             it.text()?.trim()?.takeIf { it.isNotEmpty() }
         }.distinct().take(5)
 
-        val episodes = mutableListOf<Episode>()
-        val addedEpisodeNumbers = mutableSetOf<Int>()
+        // BÖLÜMLERİN EKLENMESİ
+        val episodeElements = document.select(".bolum-listesi a, #bolumler a, ul.bolumler li a, .dizi-bolumleri a, a[href*=-bolum]")
 
-        val dataUrls = document.select("[data-url]").mapNotNull { element ->
-            val dataUrl = element.attr("data-url").trim()
-            if (dataUrl.isNotEmpty()) fixUrlNull(dataUrl) else null
-        }.distinct()
+        val episodes = episodeElements.mapNotNull { element ->
+            val epUrl = fixUrlNull(element.attr("href")) ?: return@mapNotNull null
 
-        val groupedPartUrls = dataUrls.filter { 
-            "\\d+-\\d+".toRegex().containsMatchIn(it) 
+            // Fragman gibi videoları listeye bölüm olarak eklememek için filtreliyoruz
+            if (epUrl.contains("fragman", ignoreCase = true)) return@mapNotNull null
+
+            val epName = element.text().trim()
+
+            // Bölüm numarasını isminden veya URL'den parse ediyoruz
+            val epNumMatch = """(\d+)""".toRegex().find(epName)
+                ?: """-(\d+)-?bolum""".toRegex().find(epUrl)
+            val epNum = epNumMatch?.groupValues?.get(1)?.toIntOrNull()
+
+            val isFinal = epUrl.contains("final", ignoreCase = true) || epName.contains("final", ignoreCase = true)
+            val finalName = if (isFinal) "Final Bölümü" else "${epNum ?: "Bilinmeyen"}. Bölüm"
+
+            // YENİ YAPI: newEpisode builder kullanımı
+            newEpisode(epUrl) {
+                this.name = finalName
+                this.episode = epNum
+            }
         }
-        val singlePartUrls = dataUrls.filterNot { it in groupedPartUrls }
+            // Aynı linkten iki tane varsa temizle ve bölüm numarasına göre sırala
+            .distinctBy { it.data }
+            .sortedBy { it.episode ?: Int.MAX_VALUE }
 
-        processEpisodeParts(groupedPartUrls, addedEpisodeNumbers, episodes)
-        processSingleEpisodes(singlePartUrls, addedEpisodeNumbers, episodes)
-
-        val sortedEpisodes = episodes.sortedBy { it.episode ?: Int.MAX_VALUE }
-
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, sortedEpisodes) {
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
             this.plot = description
             this.tags = tags
         }
     }
 
-    private suspend fun processEpisodeParts(
-        partUrls: List<String>, 
-        addedEpisodes: MutableSet<Int>,
-        episodes: MutableList<Episode>
-    ) {
-        for (partUrl in partUrls) {
-            try {
-                val partDoc = app.get(partUrl).document
-                val tabContents = partDoc.select("div[id^=tab-], .tab-pane[id*=bolum], #bolumler div.tab-content")
-                
-                for (tab in tabContents) {
-                    val tabId = tab.id().lowercase()
-                    val isFinal = tabId.contains("final")
-                    val episodeMatch = """-(\d+)-?bolum?""".toRegex().find(tabId)
-                    val episodeNumber = episodeMatch?.groupValues?.get(1)?.toIntOrNull()
-
-                    if (shouldAddEpisode(episodeNumber, isFinal, addedEpisodes)) {
-                        val iframeUrl = extractIframeUrl(tab) ?: continue
-                
-                        episodes.add(newEpisode(iframeUrl) {
-                            name = if (isFinal) "Final Bölüm" else "${episodeNumber ?: "Bilinmeyen"}. Bölüm"
-                            episode = episodeNumber
-                        })
-                        episodeNumber?.let { addedEpisodes.add(it) }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("TRASYA", "Part URL error: $partUrl", e)
-            }
-        }
-    }
-
-    private suspend fun processSingleEpisodes(
-        epUrls: List<String>,
-        addedEpisodes: MutableSet<Int>,
-        episodes: MutableList<Episode>
-    ) {
-        for (epUrl in epUrls) {
-            try {
-                val epDoc = app.get(epUrl).document
-                val iframe = epDoc.selectFirst("iframe, .embed-responsive-item")
-                val iframeUrl = extractIframeUrl(iframe) ?: continue
-
-                val isFinal = epUrl.contains("final", ignoreCase = true)
-                val episodeMatch = """-(\d+)-?bolum?""".toRegex().find(epUrl)
-                val episodeNumber = episodeMatch?.groupValues?.get(1)?.toIntOrNull()
-
-                if (shouldAddEpisode(episodeNumber, isFinal, addedEpisodes)) {
-                    episodes.add(newEpisode(iframeUrl) {
-                        name = if (isFinal) "Final Bölüm" else "${episodeNumber ?: "Bilinmeyen"}. Bölüm"
-                        episode = episodeNumber
-                    })
-                    episodeNumber?.let { addedEpisodes.add(it) }
-                }
-            } catch (e: Exception) {
-                Log.e("TRASYA", "Single episode error: $epUrl", e)
-            }
-        }
-    }
-
-    private fun shouldAddEpisode(
-        episodeNumber: Int?, 
-        isFinal: Boolean, 
-        addedEpisodes: Set<Int>
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
     ): Boolean {
-        return (episodeNumber != null && episodeNumber !in addedEpisodes) || isFinal
-    }
+        Log.d("TRASYA", "Bölüm yükleniyor (URL): $data")
 
-    private fun extractIframeUrl(element: Element?): String? {
-        if (element == null) return null
-        
-        return element.attr("data-src").ifBlank { 
-            element.attr("src")
-        }.takeIf { it.isNotEmpty() }?.let { url ->
-            if (url.startsWith("http")) url else "https:$url"
+        // Kullanıcı bir bölüme tıkladığında SADECE o bölümün sayfasını indiriyoruz
+        val document = app.get(data).document
+
+        // 1. Doğrudan sayfadaki iframe'leri bul
+        val iframes = document.select("iframe")
+        iframes.forEach { iframe ->
+            val src = iframe.attr("src").ifBlank { iframe.attr("data-src") }.trim()
+            if (src.isNotEmpty()) {
+                val fixedUrl = if (src.startsWith("//")) "https:$src" else src
+                loadExtractor(fixedUrl, data, subtitleCallback, callback)
+            }
         }
-    }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("TRASYA", "Loading links: $data")
-        loadExtractor(data, "$mainUrl/", subtitleCallback, callback)
+        // 2. Eğer Asyalog alternatif oynatıcıları data-url, data-src gibi attributelar ile gizlediyse onları bul
+        val hiddenUrls = document.select("[data-url]").mapNotNull {
+            it.attr("data-url").trim().takeIf { url -> url.isNotEmpty() }
+        }.distinct()
+
+        hiddenUrls.forEach { url ->
+            val fixedUrl = fixUrlNull(url)?.let {
+                if (it.startsWith("//")) "https:$it" else it
+            }
+            fixedUrl?.let {
+                loadExtractor(it, data, subtitleCallback, callback)
+            }
+        }
+
         return true
     }
 }
