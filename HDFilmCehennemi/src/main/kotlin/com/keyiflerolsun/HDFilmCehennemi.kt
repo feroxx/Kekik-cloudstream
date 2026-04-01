@@ -208,34 +208,34 @@ private fun dcHello(parts: List<String>): String {
     // 1. Birleştir
     val joined = parts.joinToString("")
 
-    // 2. Tersine Çevir (YENİ SIRA: İlk işlem bu)
+    // 2. Tersine Çevir
     val reversed = joined.reversed()
 
-    // 3. Base64 Decode
-    val decodedBytes = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
+    // 3. ROT13 Uygula (YENİ SIRA: Base64'ten ÖNCE, düz metin üzerindeyken)
+    val rot = reversed.map { c ->
+        when (c) {
+            in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+            in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+            else -> c
+        }
+    }.joinToString("")
 
-    // 4 & 5. ROT13 ve Unmix İşlemlerini tek döngüde hallediyoruz
+    // 4. Base64 Decode
+    val decodedBytes = android.util.Base64.decode(rot, android.util.Base64.DEFAULT)
+
+    // 5. Unmix (Matematiksel Döngü)
     val unmix = StringBuilder()
     for (i in decodedBytes.indices) {
-        // JS'deki atob() çıktısına birebir uyması için işaretsiz (unsigned) okuyoruz
-        val b = decodedBytes[i].toInt() and 0xFF
-        var c = b.toChar()
-
-        // ROT13 Uygulama (Sadece ASCII harflerine)
-        if (c in 'a'..'z') {
-            c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-        } else if (c in 'A'..'Z') {
-            c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-        }
-
-        // Unmix Matematiksel Döngüsü
-        val charCode = c.code
+        // İşaretsiz byte okumak için and 0xFF ekliyoruz
+        val charCode = decodedBytes[i].toInt() and 0xFF 
+        
         val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
         unmix.append(newChar.toChar())
     }
 
     return unmix.toString()
 }
+
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
