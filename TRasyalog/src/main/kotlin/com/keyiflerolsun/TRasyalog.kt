@@ -72,26 +72,30 @@ class TRasyalog : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title = document.selectFirst(".afis h1")?.text()?.trim()
-            ?: return null
+        // SENIOR DOKUNUŞU: Spesifik class'lar bulunamazsa genel <h1> etiketine,
+        // o da yoksa direkt sayfanın <title> etiketine fallback yapıyoruz.
+        // Böylece başlık bulamadığı için sayfanın çökmesini (ErrorLoadingException) engelliyoruz.
+        val title = document.selectFirst(".ssag h1")?.text()?.trim()
+            ?: document.selectFirst("h1")?.text()?.trim()
+            ?: document.title().split("|", "-").firstOrNull()?.trim()
+            ?: return null // Buraya düşmesi mucize olur.
 
-        val poster = fixUrlNull(
-            document.selectFirst(".afis img")?.attr("src")
-                ?: document.selectFirst(".afis img")?.attr("data-src")
-        )
+        // Poster için tarama ağını genişlettik
+        val posterElement = document.selectFirst(".afis img")
+        val poster = fixUrlNull(posterElement?.attr("src")?.takeIf { it.isNotEmpty() }
+            ?: posterElement?.attr("data-src"))
 
-        val description = document.selectFirst(".aciklama")?.text()?.trim()
-        val tags = document.select("[itemprop=name]").mapNotNull { it.text()?.trim() }.distinct()
+        val description = document.selectFirst(".ozet, .aciklama")?.text()?.trim()
+        val tags = document.select(".kategori a, .post-tags a, span.genre").mapNotNull { it.text()?.trim() }.distinct()
 
         val episodes = mutableListOf<Episode>()
         val tabHeaders = document.select("ul.sekme-baslik li")
 
         if (tabHeaders.isNotEmpty() && tabHeaders.first()?.attr("rel")?.startsWith("bolum") == true) {
             tabHeaders.forEach { tab ->
-                val targetId = tab.attr("rel") // Örn: "bolum-1-2"
-                val epName = tab.text().trim() // Örn: "1-2. Bölüm"
+                val targetId = tab.attr("rel")
+                val epName = tab.text().trim()
 
-                // "1-2" veya "1 - 2" gibi aralıkları yakalayan regex
                 val rangeMatch = """(\d+)\s*-\s*(\d+)""".toRegex().find(epName)
 
                 if (rangeMatch != null) {
@@ -99,7 +103,6 @@ class TRasyalog : MainAPI() {
                     val end = rangeMatch.groupValues[2].toInt()
 
                     for (i in start..end) {
-                        // Her bölüm için eşsiz bir URL (data) oluşturuyoruz (?ep=X ekleyerek)
                         val episodeDataUrl = "$url#$targetId?ep=$i"
                         episodes.add(newEpisode(episodeDataUrl) {
                             this.name = "$i. Bölüm"
@@ -107,7 +110,6 @@ class TRasyalog : MainAPI() {
                         })
                     }
                 } else {
-                    // Tekil bölüm durumu (Örn: "3. Bölüm")
                     val epNum = """(\d+)""".toRegex().find(epName)?.groupValues?.get(1)?.toIntOrNull()
                     episodes.add(newEpisode("$url#$targetId") {
                         this.name = epName
@@ -116,7 +118,7 @@ class TRasyalog : MainAPI() {
                 }
             }
         } else {
-            // Klasik href tabanlı liste yapısı (Fallback)
+            // Liste yapısındaki eski/diğer tasarımlar için
             document.select(".bolum-listesi a, #bolumler a, a[href*=-bolum]").forEach { element ->
                 val epUrl = fixUrlNull(element.attr("href")) ?: return@forEach
                 if (epUrl.contains("fragman", ignoreCase = true)) return@forEach
@@ -130,7 +132,6 @@ class TRasyalog : MainAPI() {
             }
         }
 
-        // distinctBy artık ?ep= parametresi sayesinde 1. ve 2. bölümleri ayrı ayrı tutacak
         val sortedEpisodes = episodes.distinctBy { it.data }.sortedBy { it.episode ?: Int.MAX_VALUE }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, sortedEpisodes) {
@@ -139,7 +140,6 @@ class TRasyalog : MainAPI() {
             this.tags = tags
         }
     }
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
