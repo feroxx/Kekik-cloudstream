@@ -1,13 +1,12 @@
 package com.keyiflerolsun
 
 import android.util.Log
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Document
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import org.json.*
+import org.jsoup.nodes.Element
 import org.jsoup.Jsoup
-
+import org.jsoup.nodes.Document
+import java.util.regex.Pattern
 
 class TRasyalog : MainAPI() {
     override var mainUrl        = "https://asyalog.co"
@@ -17,41 +16,54 @@ class TRasyalog : MainAPI() {
     override val hasQuickSearch = false
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/library/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
-    override var sequentialMainPageDelay       = 500L  // ? 0.5 saniye
-    override var sequentialMainPageScrollDelay = 500L  // ? 0.5 saniye
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay       = 500L
+    override var sequentialMainPageScrollDelay = 500L
 
     override val mainPage = mainPageOf(
         "${mainUrl}/diziler/ulke/guney-kore" to "Kore Dizileri",
-        "${mainUrl}/diziler/ulke/cin"              to "Çin Dizileri",
-        "${mainUrl}/diziler/ulke/tayland"          to "Tayland Dizileri",
-        "${mainUrl}/category/japon-dizileri"            to "Japon Diziler",
-        "${mainUrl}/diziler/ulke/endonezya"        to "Endonezya Diziler",
-        "${mainUrl}/devam-eden-diziler"        to "Devam eden Diziler"
+        "${mainUrl}/diziler/ulke/cin" to "Çin Dizileri",
+        "${mainUrl}/diziler/ulke/tayland" to "Tayland Dizileri",
+        "${mainUrl}/category/japon-dizileri" to "Japon Diziler",
+        "${mainUrl}/diziler/ulke/endonezya" to "Endonezya Diziler",
+        "${mainUrl}/devam-eden-diziler" to "Devam eden Diziler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}/page/$page/").document
-        val home     = document.select("div#archiveListing div.post-container").mapNotNull { it.toMainPageResult() }
-
+        val home = document.select("div.post-container, article.post-item, div.archive-post").mapNotNull { 
+            it.toMainPageResult() 
+        }
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val title     = this.selectFirst("a img")?.attr("alt")?.trim() ?: return null
-        val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.thumbnail img")?.let { img ->
-        img.attr("data-src").takeIf { it.isNotEmpty() } ?: img.attr("src")
-    }
-)
+        // Daha esnek title selector
+        val title = this.selectFirst("img")?.attr("alt")
+            ?: this.selectFirst("h2 a, h3 a, .post-title a")?.text()
+            ?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        
+        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
+        
+        // Poster selector'ları çoğalttım
+        val posterUrl = fixUrlNull(
+            this.selectFirst("img[data-src]")?.attr("data-src")
+                ?: this.selectFirst("img")?.attr("data-src")
+                ?: this.selectFirst("img")?.attr("src")
+                ?: this.selectFirst(".thumbnail img, .post-thumbnail img")?.attr("src")
+        )
 
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { 
+            this.posterUrl = posterUrl 
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/?s=${query}").document
-
-        return document.select("div.post-container").mapNotNull { it.toMainPageResult() }
+        val encodedQuery = query.trim().replace(" ", "+")
+        val document = app.get("${mainUrl}/?s=$encodedQuery").document
+        return document.select("div.post-container, article.post-item, .search-result-item").mapNotNull { 
+            it.toMainPageResult() 
+        }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -59,70 +71,46 @@ class TRasyalog : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
     
-        val title = document.selectFirst("h1")?.text()?.trim() ?: return null
+        // Daha esnek title selector
+        val title = document.selectFirst("h1.entry-title, h1.post-title, h1")?.text()?.trim()
+            ?: return null
+        
+        // Poster için birden fazla selector
         val poster = fixUrlNull(
-            document.selectFirst("img.wp-image-66892")?.attr("data-src")
-                ?: document.selectFirst("img.wp-image-66892")?.attr("src")
+            document.selectFirst("img.attachment-large, img.wp-post-image, .post-thumbnail img")?.attr("data-src")
+                ?: document.selectFirst("img.attachment-large, img.wp-post-image, .post-thumbnail img")?.attr("src")
+                ?: document.selectFirst(".series-poster img, .post-featured-image img")?.attr("src")
         )
-        val description = document.selectFirst("h2 + p")?.text()?.trim()
-        val tags = document.selectFirst("b.inline:contains(Tür:)")?.parent()?.text()?.substringAfter("Tür:")?.trim()?.split(", ")?: emptyList()
-    
-        val episodeList = mutableListOf<Episode>()
+        
+        val description = document.selectFirst("div.entry-content p:first-child, .post-description p, .series-synopsis")?.text()?.trim()
+        
+        // Tags için daha esnek selector
+        val tags = document.select("span.genre, .post-tags a, .series-tags").mapNotNull { 
+            it.text()?.trim()?.takeIf { it.isNotEmpty() }
+        }.distinct().take(5)
+
+        val episodes = mutableListOf<Episode>()
         val addedEpisodeNumbers = mutableSetOf<Int>()
-    
-        val dataUrls = document.select("span[data-url]").mapNotNull {
-            it.attr("data-url")?.trim()?.takeIf { it.isNotEmpty() }?.let { fixUrl(it) }
+
+        // Data URLs'yi daha güvenli şekilde al
+        val dataUrls = document.select("[data-url]").mapNotNull { element ->
+            val dataUrl = element.attr("data-url").trim()
+            if (dataUrl.isNotEmpty()) fixUrlNull(dataUrl) else null
+        }.distinct()
+
+        // Toplu bölümler (1-5, 6-10 formatı)
+        val groupedPartUrls = dataUrls.filter { 
+            "\\d+-\\d+".toRegex().containsMatchIn(it) 
         }
-    
-        // Ayır: toplu (1-5, 6-10) ve tekli (1, 2...) bölümler
-        val groupedPartUrls = dataUrls.filter { Regex("""\d+-\d+""").containsMatchIn(it) }
+
+        // Tekli bölümler
         val singlePartUrls = dataUrls.filterNot { it in groupedPartUrls }
-    
-        // 🧩 Toplu bölümler
-        for (partUrl in groupedPartUrls) {
-            val partDoc = app.get(partUrl).document
-            val tabContents = partDoc.select("div[id^=tab-][id*=bolum]")
-            for (tab in tabContents) {
-                val tabId = tab.id()
-                val isFinal = tabId.contains("final", ignoreCase = true)
-                val episodeNumber = Regex("""-(\d+)-bolum""").find(tabId)?.groupValues?.get(1)?.toIntOrNull()
-                if ((episodeNumber != null && episodeNumber !in addedEpisodeNumbers) || isFinal) {
-                    val iframe = tab.selectFirst("iframe")
-                    val iframeUrl = iframe?.attr("data-src")?.ifBlank { iframe.attr("src") }?.let {
-                        if (it.startsWith("http")) it else "https:$it"
-                    } ?: continue
-    
-                    episodeList.add(newEpisode(iframeUrl) {
-                        name = if (isFinal) "Final Bölüm" else "$episodeNumber. Bölüm"
-                        episode = episodeNumber
-                    })
-                    episodeNumber?.let { addedEpisodeNumbers.add(it) }
-                }
-            }
-        }
-    
-        // 🧩 Tekli bölümler
-        for (epUrl in singlePartUrls) {
-            val epDoc = app.get(epUrl).document
-            val iframe = epDoc.selectFirst("iframe")
-            val iframeUrl = iframe?.attr("data-src")?.ifBlank { iframe.attr("src") }?.let {
-                if (it.startsWith("http")) it else "https:$it"
-            } ?: continue
-    
-            val isFinal = epUrl.contains("final", ignoreCase = true)
-            val episodeNumber = Regex("""-(\d+)-bolum""").find(epUrl)?.groupValues?.get(1)?.toIntOrNull()
-    
-            if ((episodeNumber != null && episodeNumber !in addedEpisodeNumbers) || isFinal) {
-                episodeList.add(newEpisode(iframeUrl) {
-                    name = if (isFinal) "Final Bölüm" else "$episodeNumber. Bölüm"
-                    episode = episodeNumber
-                })
-                episodeNumber?.let { addedEpisodeNumbers.add(it) }
-            }
-        }
-    
-        val sortedEpisodes = episodeList.sortedBy { it.episode ?: Int.MAX_VALUE }
-    
+
+        processEpisodeParts(groupedPartUrls, addedEpisodeNumbers, episodes)
+        processSingleEpisodes(singlePartUrls, addedEpisodeNumbers, episodes)
+
+        val sortedEpisodes = episodes.sortedBy { it.episode ?: Int.MAX_VALUE }
+
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, sortedEpisodes) {
             this.posterUrl = poster
             this.plot = description
@@ -130,11 +118,87 @@ class TRasyalog : MainAPI() {
         }
     }
 
-override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-    Log.d("TRASYA", "data » $data")
-    // data zaten doğrudan iframe URL'si ise loadExtractor'a gönderiyoruz
-    loadExtractor(data, "$mainUrl/", subtitleCallback, callback)
+    private suspend fun processEpisodeParts(
+        partUrls: List<String>, 
+        addedEpisodes: MutableSet<Int>,
+        episodes: MutableList<Episode>
+    ) {
+        for (partUrl in partUrls) {
+            try {
+                val partDoc = app.get(partUrl).document
+                val tabContents = partDoc.select("div[id^=tab-], .tab-pane[id*=bolum], #bolumler div.tab-content")
+                
+                for (tab in tabContents) {
+                    val tabId = tab.id().lowercase()
+                    val isFinal = tabId.contains("final")
+                    val episodeMatch = """-(\d+)-?bolum?""".toRegex().find(tabId)
+                    val episodeNumber = episodeMatch?.groupValues?.get(1)?.toIntOrNull()
 
-    return true
-}
+                    if (shouldAddEpisode(episodeNumber, isFinal, addedEpisodes)) {
+                        val iframeUrl = extractIframeUrl(tab) ?: continue
+                        
+                        episodes.add(newEpisode(iframeUrl) {
+                            name = if (isFinal) "Final Bölüm" else "${episodeNumber ?: "Bilinmeyen"}. Bölüm"
+                            episode = episodeNumber
+                        })
+                        episodeNumber?.let { addedEpisodes.add(it) }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TRASYA", "Part URL error: $partUrl", e)
+            }
+        }
+    }
+
+    private suspend fun processSingleEpisodes(
+        epUrls: List<String>,
+        addedEpisodes: MutableSet<Int>,
+        episodes: MutableList<Episode>
+    ) {
+        for (epUrl in epUrls) {
+            try {
+                val epDoc = app.get(epUrl).document
+                val iframe = epDoc.selectFirst("iframe, .embed-responsive-item")
+                val iframeUrl = extractIframeUrl(iframe) ?: continue
+
+                val isFinal = epUrl.contains("final", ignoreCase = true)
+                val episodeMatch = """-(\d+)-?bolum?""".toRegex().find(epUrl)
+                val episodeNumber = episodeMatch?.groupValues?.get(1)?.toIntOrNull()
+
+                if (shouldAddEpisode(episodeNumber, isFinal, addedEpisodes)) {
+                    episodes.add(newEpisode(iframeUrl) {
+                        name = if (isFinal) "Final Bölüm" else "${episodeNumber ?: "Bilinmeyen"}. Bölüm"
+                        episode = episodeNumber
+                    })
+                    episodeNumber?.let { addedEpisodes.add(it) }
+                }
+            } catch (e: Exception) {
+                Log.e("TRASYA", "Single episode error: $epUrl", e)
+            }
+        }
+    }
+
+    private fun shouldAddEpisode(
+        episodeNumber: Int?, 
+        isFinal: Boolean, 
+        addedEpisodes: Set<Int>
+    ): Boolean {
+        return (episodeNumber != null && episodeNumber !in addedEpisodes) || isFinal
+    }
+
+    private fun extractIframeUrl(element: Element?): String? {
+        if (element == null) return null
+        
+        return element.attr("data-src").ifBlank { 
+            element.attr("src")
+        }.takeIf { it.isNotEmpty() }?.let { url ->
+            if (url.startsWith("http")) url else "https:$url"
+        }
+    }
+
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+        Log.d("TRASYA", "Loading links: $data")
+        loadExtractor(data, "$mainUrl/", subtitleCallback, callback)
+        return true
+    }
 }
