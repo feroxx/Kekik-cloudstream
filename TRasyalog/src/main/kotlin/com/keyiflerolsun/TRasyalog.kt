@@ -4,9 +4,6 @@ import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
-import java.util.regex.Pattern
 
 class TRasyalog : MainAPI() {
     override var mainUrl        = "https://asyalog.co"
@@ -31,26 +28,26 @@ class TRasyalog : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}/page/$page/").document
-        val home = document.select("div.t-baslik").mapNotNull { 
+        // HATA DÜZELTİLDİ: t-baslik yerine asıl dizi kartlarını tutan frag-k sınıfı seçildi.
+        val home = document.select("div.frag-k").mapNotNull { 
             it.toMainPageResult() 
         }
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        // Daha esnek title selector
-        val title = this.selectFirst("img")?.attr("alt")
-            ?: this.selectFirst("h2 a, h3 a, .post-title a")?.text()
-            ?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        // HTML yapısına uygun olarak başlık, link ve poster çekimi
+        val title = this.selectFirst("a.baslik span")?.text()?.trim()
+            ?: this.selectFirst("a.resim")?.attr("title")?.trim() 
+            ?: return null
         
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
+        val href = fixUrlNull(this.selectFirst("a.resim")?.attr("href") 
+            ?: this.selectFirst("a.baslik")?.attr("href")) 
+            ?: return null
         
-        // Poster selector'ları çoğalttım
         val posterUrl = fixUrlNull(
-            this.selectFirst("img[data-src]")?.attr("data-src")
-                ?: this.selectFirst("img")?.attr("data-src")
-                ?: this.selectFirst("img")?.attr("src")
-                ?: this.selectFirst(".thumbnail img, .post-thumbnail img")?.attr("src")
+            this.selectFirst("a.resim img")?.attr("data-src")
+                ?: this.selectFirst("a.resim img")?.attr("src")
         )
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { 
@@ -61,7 +58,8 @@ class TRasyalog : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val encodedQuery = query.trim().replace(" ", "+")
         val document = app.get("${mainUrl}/?s=$encodedQuery").document
-        return document.select("div.post-container, article.post-item, .search-result-item").mapNotNull { 
+        // Arama sonuçlarında da büyük ihtimalle frag-k kullanılıyordur, alternatifleri de korudum.
+        return document.select("div.frag-k, div.post-container, .sag-liste li").mapNotNull { 
             it.toMainPageResult() 
         }
     }
@@ -71,11 +69,9 @@ class TRasyalog : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
     
-        // Daha esnek title selector
         val title = document.selectFirst("h1.entry-title, h1.post-title, h1")?.text()?.trim()
             ?: return null
         
-        // Poster için birden fazla selector
         val poster = fixUrlNull(
             document.selectFirst("img.attachment-large, img.wp-post-image, .post-thumbnail img")?.attr("data-src")
                 ?: document.selectFirst("img.attachment-large, img.wp-post-image, .post-thumbnail img")?.attr("src")
@@ -84,7 +80,6 @@ class TRasyalog : MainAPI() {
         
         val description = document.selectFirst("div.entry-content p:first-child, .post-description p, .series-synopsis")?.text()?.trim()
         
-        // Tags için daha esnek selector
         val tags = document.select("span.genre, .post-tags a, .series-tags").mapNotNull { 
             it.text()?.trim()?.takeIf { it.isNotEmpty() }
         }.distinct().take(5)
@@ -92,18 +87,14 @@ class TRasyalog : MainAPI() {
         val episodes = mutableListOf<Episode>()
         val addedEpisodeNumbers = mutableSetOf<Int>()
 
-        // Data URLs'yi daha güvenli şekilde al
         val dataUrls = document.select("[data-url]").mapNotNull { element ->
             val dataUrl = element.attr("data-url").trim()
             if (dataUrl.isNotEmpty()) fixUrlNull(dataUrl) else null
         }.distinct()
 
-        // Toplu bölümler (1-5, 6-10 formatı)
         val groupedPartUrls = dataUrls.filter { 
             "\\d+-\\d+".toRegex().containsMatchIn(it) 
         }
-
-        // Tekli bölümler
         val singlePartUrls = dataUrls.filterNot { it in groupedPartUrls }
 
         processEpisodeParts(groupedPartUrls, addedEpisodeNumbers, episodes)
@@ -136,7 +127,7 @@ class TRasyalog : MainAPI() {
 
                     if (shouldAddEpisode(episodeNumber, isFinal, addedEpisodes)) {
                         val iframeUrl = extractIframeUrl(tab) ?: continue
-                        
+                
                         episodes.add(newEpisode(iframeUrl) {
                             name = if (isFinal) "Final Bölüm" else "${episodeNumber ?: "Bilinmeyen"}. Bölüm"
                             episode = episodeNumber
