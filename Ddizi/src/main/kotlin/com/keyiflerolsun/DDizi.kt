@@ -250,10 +250,10 @@ override suspend fun loadLinks(
         mapOf(
             "accept" to "*/*",
             "user-agent" to USER_AGENT,
-            "referer" to mainUrl.trimEnd('/') + "//" + ogVideo.trimStart('/')
+            "referer" to "https://twitter.com/"
         )
     } else {
-        getHeaders(mainUrl.trimEnd('/') + "//" + ogVideo.trimStart('/'))
+        getHeaders("https://twitter.com/")
     }
 
     callback.invoke(
@@ -264,12 +264,12 @@ override suspend fun loadLinks(
             type = if (isHls) ExtractorLinkType.M3U8 else INFER_TYPE
             ) {
             this.quality = getQualityFromName(quality)
-            headers = mapOf("Referer" to mainUrl.trimEnd('/') + "//" + ogVideo.trimStart('/'))
+            headers = mapOf("Referer" to "https://twitter.com/")
           }
     )
 
     if (isHls) {
-        M3u8Helper.generateM3u8(name, fileUrl, ogVideo, headers = videoHeaders).forEach(callback)
+        M3u8Helper.generateM3u8(name, fileUrl, "https://twitter.com/", headers = videoHeaders).forEach(callback)
     }
 
     return true
