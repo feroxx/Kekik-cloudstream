@@ -205,36 +205,40 @@ class HDFilmCehennemi : MainAPI() {
     }
 
 private fun dcHello(parts: List<String>): String {
-    // 1. Birleştir
+    // 1. Diziyi Birleştir
     val joined = parts.joinToString("")
 
-    // 2. Tersine Çevir
-    val reversed = joined.reversed()
+    // 2. Base64 Decode (YENİ SIRA: İlk işlem bu, doğrudan çözüyoruz)
+    val decodedBytes = android.util.Base64.decode(joined, android.util.Base64.DEFAULT)
+    val size = decodedBytes.size
 
-    // 3. ROT13 Uygula (YENİ SIRA: Base64'ten ÖNCE, düz metin üzerindeyken)
-    val rot = reversed.map { c ->
-        when (c) {
-            in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-            in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-            else -> c
-        }
-    }.joinToString("")
-
-    // 4. Base64 Decode
-    val decodedBytes = android.util.Base64.decode(rot, android.util.Base64.DEFAULT)
-
-    // 5. Unmix (Matematiksel Döngü)
     val unmix = StringBuilder()
-    for (i in decodedBytes.indices) {
-        // İşaretsiz byte okumak için and 0xFF ekliyoruz
-        val charCode = decodedBytes[i].toInt() and 0xFF 
+
+    // 3, 4 ve 5. İşlemler: Reverse, ROT13 ve Unmix'i TEK DÖNGÜDE birleştiriyoruz
+    for (i in 0 until size) {
+        // Reverse Mantığı: Diziyi sondan başa doğru okuyoruz
+        val originalIndex = size - 1 - i
         
+        // Byte'ı JS'deki gibi unsigned (işaretsiz) olarak alıp Char'a çeviriyoruz
+        val b = decodedBytes[originalIndex].toInt() and 0xFF
+        var c = b.toChar()
+
+        // ROT13 Uygulama
+        if (c in 'a'..'z') {
+            c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+        } else if (c in 'A'..'Z') {
+            c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+        }
+
+        // Unmix Matematiksel Döngüsü
+        val charCode = c.code
         val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
         unmix.append(newChar.toChar())
     }
 
     return unmix.toString()
 }
+
 
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
