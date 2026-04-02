@@ -14,7 +14,7 @@ jobs:
   delete-old-runs:
     runs-on: ubuntu-latest
     steps:
-      - name: 7 Günden Eski Run'ları Sil
+      - name: 2 Günden Eski Run'ları Sil
         shell: python
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -26,7 +26,7 @@ jobs:
           # Yapılandırma
           token = os.getenv("GITHUB_TOKEN")
           repo = "${{ github.repository }}"
-          days_to_keep = 3
+          days_to_keep = 2
           
           headers = {
               "Authorization": f"Bearer {token}",
