@@ -11,7 +11,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 // DiziPal sınıfının dışına (altına) ekle
 class DizipalPlayer : ExtractorApi() {
     override var name = "DizipalPlayer"
-    override var mainUrl = "https://four.dplayer82.site"
+    override var mainUrl = "https://dplayer82.site"
     override val requiresReferer = true
 
         override suspend fun getUrl(
@@ -26,7 +26,7 @@ class DizipalPlayer : ExtractorApi() {
 
             if (playlistId != null) {
                 val domainRegex = """https?://[^/]+""".toRegex()
-                val domain = domainRegex.find(url)?.value ?: "https://four.dplayer82.site"
+                val domain = domainRegex.find(url)?.value ?: "https://dplayer82.site"
                 val apiUrl = "$domain/source2.php?v=$playlistId"
 
                 val apiResponse = app.get(apiUrl, referer = url).text
