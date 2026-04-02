@@ -349,8 +349,8 @@ class DiziPalOriginal : MainAPI() {
 
             val responseText = apiResponse.text
 
-            // 4. JSON benzeri veriden videoSource değerini yakala
-            val videoSourceRaw = Regex(""""videoSource"\s*:\s*"([^"]+)"""").find(responseText)?.groupValues?.getOrNull(1)
+            // 4. JSON benzeri veriden securedLink değerini yakala
+            val videoSourceRaw = Regex(""""securedLink"\s*:\s*"([^"]+)"""").find(responseText)?.groupValues?.getOrNull(1)
 
             if (videoSourceRaw != null) {
                 // Kaçış karakterlerini (\/) temizle ve fixUrl ile son halini ver
