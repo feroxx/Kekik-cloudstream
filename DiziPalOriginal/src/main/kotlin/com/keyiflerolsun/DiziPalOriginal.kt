@@ -329,7 +329,7 @@ class DiziPalOriginal : MainAPI() {
             val playerToken = apiResponse.cookies["fireplayer_player"]
 
             if (!playerToken.isNullOrEmpty()) {
-                sessionCookie = "fireplayer_player=$playerToken;"
+                sessionCookie = "fireplayer_player=$playerToken"
             } else {
                 // 2. Eğer orada yoksa, Headers içinden manuel okuyalım.
                 // Büyük/küçük harf duyarlılığından kaçınmak için ikisini de kontrol ediyoruz.
