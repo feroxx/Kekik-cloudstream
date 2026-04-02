@@ -11,7 +11,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 // DiziPal sınıfının dışına (altına) ekle
 class DizipalPlayer : ExtractorApi() {
     override var name = "DizipalPlayer"
-    override var mainUrl = "https://dplayer82.site"
+    override var mainUrl = "dplayer82.site"
     override val requiresReferer = true
 
         override suspend fun getUrl(
@@ -49,7 +49,7 @@ class DizipalPlayer : ExtractorApi() {
                                     url = fileUrl,
                                     type = ExtractorLinkType.M3U8
                                 ) {
-                                    headers = mapOf("Referer" to url)
+                                    headers = mapOf("Origin" to domain, "Referer" to url)
                                     Qualities.Unknown.value
                                 }
                             )
