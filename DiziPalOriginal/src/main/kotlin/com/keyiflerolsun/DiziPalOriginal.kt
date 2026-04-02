@@ -3,12 +3,9 @@
 package com.keyiflerolsun
 
 import android.util.Log
-import org.jsoup.nodes.Element
-import org.json.JSONObject
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
+import org.jsoup.nodes.Element
 
 class DiziPalOriginal : MainAPI() {
     override var mainUrl              = "https://dizipal2040.com"
@@ -324,10 +321,36 @@ class DiziPalOriginal : MainAPI() {
                     "X-Requested-With" to "XMLHttpRequest",
                     "Accept" to "*/*"
                 )
-            ).text
+            )
+
+            var sessionCookie = ""
+
+// 1. Önce CloudStream'in kendi parse ettiği "cookies" map'ine bakalım (En kolayı)
+            val playerToken = apiResponse.cookies["fireplayer_player"]
+
+            if (!playerToken.isNullOrEmpty()) {
+                sessionCookie = "fireplayer_player=$playerToken;"
+            } else {
+                // 2. Eğer orada yoksa, Headers içinden manuel okuyalım.
+                // Büyük/küçük harf duyarlılığından kaçınmak için ikisini de kontrol ediyoruz.
+                val rawSetCookie = apiResponse.headers["Set-Cookie"] ?: apiResponse.headers["set-cookie"]
+
+                // rawSetCookie bir String olarak döndü, artık String metodlarını güvenle kullanabiliriz
+                if (rawSetCookie != null && rawSetCookie.contains("fireplayer_player")) {
+                    // substringBefore yerine split kullanmak tip çıkarımı açısından her zaman daha garantilidir
+                    val cleanCookie = rawSetCookie.split(";").firstOrNull()
+                    if (cleanCookie != null) {
+                        sessionCookie = "$cleanCookie;"
+                    }
+                }
+            }
+
+            Log.d("DZP", "Yakalanan Cookie » $sessionCookie")
+
+            val responseText = apiResponse.text
 
             // 4. JSON benzeri veriden videoSource değerini yakala
-            val videoSourceRaw = Regex(""""videoSource"\s*:\s*"([^"]+)"""").find(apiResponse)?.groupValues?.getOrNull(1)
+            val videoSourceRaw = Regex(""""videoSource"\s*:\s*"([^"]+)"""").find(responseText)?.groupValues?.getOrNull(1)
 
             if (videoSourceRaw != null) {
                 // Kaçış karakterlerini (\/) temizle ve fixUrl ile son halini ver
@@ -344,6 +367,7 @@ class DiziPalOriginal : MainAPI() {
                         type = ExtractorLinkType.M3U8 // .txt uzantılı olsa bile içeriği HLS/M3U8 formatındadır
                     ) {
                         referer = embedUrl
+                        headers= mapOf("Cookie" to sessionCookie)
                         quality = Qualities.Unknown.value
                     }
                 )
