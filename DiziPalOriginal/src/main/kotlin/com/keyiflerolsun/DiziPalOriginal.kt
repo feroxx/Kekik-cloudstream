@@ -364,9 +364,9 @@ class DiziPalOriginal : MainAPI() {
                         source = this.name,
                         name = "Dizipal (Imagestoo)",
                         url = finalM3u8Url,
-                        type = ExtractorLinkType.M3U8 // .txt uzantılı olsa bile içeriği HLS/M3U8 formatındadır
+                        type = ExtractorLinkType.M3U8
                     ) {
-                        referer = embedUrl
+                        referer = mapOf("Referer" to embedUrl).toString()
                         headers= mapOf("Cookie" to sessionCookie)
                         quality = Qualities.Unknown.value
                     }
