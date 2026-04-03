@@ -152,6 +152,9 @@ class DiziPal : MainAPI() {
             ),
             referer     = "${mainUrl}/",
             data        = mapOf(
+                "cKey" to "ca1d4a53d0f4761a949b85e51e18f096",
+                "cValue" to "MTc3NTI1MTgwMDg3ODNkODBiMDM2MTk1YTkxMWU5ZTYyYjE4NzQyMjJlMzMwNjAxNGVjMWQzMzliNzY5NzFlZmViMzRhMGVmNjgwODU3MGIyZA==",
+                "type" to "hepsi", 
                 "searchterm" to query
             )
         )
