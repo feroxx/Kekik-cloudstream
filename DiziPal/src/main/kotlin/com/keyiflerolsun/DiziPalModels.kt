@@ -21,7 +21,8 @@ data class SearchItem(
     
     // JSON'da hem object_categories hem de object_logo_url (saçma bir şekilde) kategori içeriyor
     @JsonProperty("object_categories") 
-    val genres: String,
+    val genres: String? = null
+
     
     @JsonProperty("object_related_imdb_point") 
     val imdb: Double,
