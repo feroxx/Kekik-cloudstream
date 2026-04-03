@@ -144,32 +144,39 @@ class DiziPal : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val responseRaw = app.post(
-            "${mainUrl}/bg/searchcontent",
-            headers     = mapOf(
-                "Accept"           to "application/json, text/javascript, */*; q=0.01",
-                "X-Requested-With" to "XMLHttpRequest"
-            ),
-            referer     = "${mainUrl}/",
-            data        = mapOf(
-                "cKey" to "ca1d4a53d0f4761a949b85e51e18f096",
-                "cValue" to "MTc3NTI1MTgwMDg3ODNkODBiMDM2MTk1YTkxMWU5ZTYyYjE4NzQyMjJlMzMwNjAxNGVjMWQzMzliNzY5NzFlZmViMzRhMGVmNjgwODU3MGIyZA==",
-                "type" to "hepsi", 
-                "searchterm" to query
-            )
+    val responseRaw = app.post(
+        "${mainUrl}/bg/searchcontent",
+        headers = mapOf(
+            "Accept" to "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With" to "XMLHttpRequest"
+        ),
+        referer = "${mainUrl}/",
+        data = mapOf(
+            "cKey" to "ca1d4a53d0f4761a949b85e51e18f096",
+            "cValue" to "MTc3NTI1MTgwMDg3ODNkODBiMDM2MTk1YTkxMWU5ZTYyYjE4NzQyMjJlMzMwNjAxNGVjMWQzMzliNzY5NzFlZmViMzRhMGVmNjgwODU3MGIyZA==",
+            "type" to "hepsi", 
+            "searchterm" to query
         )
+    )
 
-        val searchItemsMap = jacksonObjectMapper().readValue<Map<String, SearchItem>>(responseRaw.text)
+    val mapper = jacksonObjectMapper()
+    val rootNode = mapper.readTree(responseRaw.text)
+    
+    // JSON Pointer ile doğrudan "data" içindeki "result" array'ine iniyoruz
+    val resultArrayNode = rootNode.at("/data/result")
 
-        val searchResponses = mutableListOf<SearchResponse>()
-
-        for ((_, searchItem) in searchItemsMap) {
-            searchResponses.add(searchItem.toPostSearchResult())
-        }
-
-        return searchResponses
+    // Fail-safe: Eğer API değişirse, state false gelirse veya boş dönerse provider'ın crash olmasını engelliyoruz
+    if (resultArrayNode.isMissingNode || !resultArrayNode.isArray) {
+        return emptyList()
     }
 
+    // Sadece hedefteki result array'ini SearchItem listesine dönüştürüyoruz
+    val searchItems: List<SearchItem> = mapper.readValue(resultArrayNode.traverse())
+
+    // Idiomatic Kotlin: for döngüsü ve mutable liste yerine "map" ile fonksiyonel ve temiz dönüşüm
+    return searchItems.map { it.toPostSearchResult() }
+}
+    
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
