@@ -205,41 +205,27 @@ class HDFilmCehennemi : MainAPI() {
     }
 
 private fun dcHello(parts: List<String>): String {
-    // 1. Diziyi Birleştir
-    val joined = parts.joinToString("")
+    // 1. Diziyi Birleştir ve Tersine Çevir (JS'deki split.reverse.join karşılığı)
+    val reversed = parts.joinToString("").reversed()
 
-    // 2. Base64 Decode (YENİ SIRA: İlk işlem bu, doğrudan çözüyoruz)
-    val decodedBytes = android.util.Base64.decode(joined, android.util.Base64.DEFAULT)
-    val size = decodedBytes.size
+    // 2. ÇİFT BASE64 DECODE (Adamların üst üste atob() çağırmasının karşılığı)
+    // Önce ilk katmanı çözüyoruz
+    val firstDecode = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
+    // Çıkan sonucu (ki o da bir Base64 string'i) tekrar çözüyoruz
+    val secondDecode = android.util.Base64.decode(firstDecode, android.util.Base64.DEFAULT)
 
+    // 3. Unmix Matematiksel Döngüsü (ROT13 artık YOK)
     val unmix = StringBuilder()
-
-    // 3, 4 ve 5. İşlemler: Reverse, ROT13 ve Unmix'i TEK DÖNGÜDE birleştiriyoruz
-    for (i in 0 until size) {
-        // Reverse Mantığı: Diziyi sondan başa doğru okuyoruz
-        val originalIndex = size - 1 - i
+    for (i in secondDecode.indices) {
+        // İşaretsiz byte okumak için and 0xFF ekliyoruz
+        val charCode = secondDecode[i].toInt() and 0xFF 
         
-        // Byte'ı JS'deki gibi unsigned (işaretsiz) olarak alıp Char'a çeviriyoruz
-        val b = decodedBytes[originalIndex].toInt() and 0xFF
-        var c = b.toChar()
-
-        // ROT13 Uygulama
-        if (c in 'a'..'z') {
-            c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-        } else if (c in 'A'..'Z') {
-            c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-        }
-
-        // Unmix Matematiksel Döngüsü
-        val charCode = c.code
         val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
         unmix.append(newChar.toChar())
     }
 
     return unmix.toString()
 }
-
-
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
