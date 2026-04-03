@@ -133,7 +133,7 @@ class DiziPal : MainAPI() {
 
     private fun SearchItem.toPostSearchResult(): SearchResponse {
         val title     = this.title
-        val href      = "${mainUrl}${this.slug}"
+        val href      = "${mainUrl}/${this.slug}"
         val posterUrl = this.poster
 
         return if (this.type == "series") {
