@@ -1,12 +1,12 @@
 package com.keyiflerolsun
 
-import android.util.Log
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.extractors.helper.AesHelper
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.ExtractorApi
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 // DiziPal sınıfının dışına (altına) ekle
 class DizipalPlayer : ExtractorApi() {
@@ -55,7 +55,7 @@ class DizipalPlayer : ExtractorApi() {
                                     url = fileUrl,
                                     type = ExtractorLinkType.M3U8
                                 ) {
-                                    headers = mapOf("Origin" to domain, "Referer" to (referer ?: url))
+                                    headers = mapOf("Origin" to domain, "Referer" to url)
                                     Qualities.Unknown.value
                                 }
                             )
