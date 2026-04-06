@@ -20,23 +20,21 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.base64Decode
 import com.lagradost.cloudstream3.fixUrl
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.newEpisode
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.syncproviders.SyncIdName
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.syncproviders.SyncIdName
-import com.lagradost.cloudstream3.network.CloudflareKiller
 import okhttp3.Interceptor
 import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import java.util.Calendar
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -121,7 +119,7 @@ class Dizilla : MainAPI() {
                 val home = resultArray.mapNotNull {
                     val title = it.get("title")?.asText() ?: return@mapNotNull null
                     val slug = it.get("slug")?.asText() ?: return@mapNotNull null
-                    val poster = fixUrlNull(it.get("poster")?.asText())
+                    val poster = fixPosterUrl(fixUrlNull(it.get("poster")?.asText()))
 
                     newTvSeriesSearchResponse(title, fixUrl("/$slug"), TvType.TvSeries) {
                         this.posterUrl = poster
@@ -249,7 +247,7 @@ class Dizilla : MainAPI() {
 
             } else {
                 // Diğer case'ler (HTML parsing)
-                var document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
+                val document = Jsoup.parse(app.get(request.data, interceptor = interceptor).body.string())
                 val home = if (request.data.contains("api")) {
                     document.select("span.watchlistitem-").mapNotNull { it.diziler() }
                 } else {
@@ -274,15 +272,6 @@ class Dizilla : MainAPI() {
         }
     }
 
-    private fun Element.yeniEklenenler(): SearchResponse {
-        val title = this.selectFirst("h2")?.text() ?: "return null"
-        val href = fixUrlNull(this.attr("href")) ?: "return null"
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            this.posterUrl = posterUrl
-        }
-    }
     private suspend fun Element.sonBolumler(): SearchResponse {
         val name = this.selectFirst("h2")?.text() ?: ""
         val epName = this.selectFirst("div.opacity-80")!!.text().replace(". Sezon ", "x")
@@ -298,16 +287,6 @@ class Dizilla : MainAPI() {
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
-        }
-    }
-
-    private fun SearchItem.toSearchResponse(): SearchResponse? {
-        return newTvSeriesSearchResponse(
-            title ?: return null,
-            "${mainUrl}/${slug}",
-            TvType.TvSeries,
-        ) {
-            this.posterUrl = poster
         }
     }
 
@@ -341,7 +320,7 @@ class Dizilla : MainAPI() {
 
 // EĞER string başında { yoksa ve essage ile başlıyorsa tamir et
         val fixedJson = if (!decryptedJson.startsWith("{") && decryptedJson.contains("\"essage\"")) {
-            "{m\"" + decryptedJson
+            "{m\"$decryptedJson"
         } else {
             decryptedJson
         }
@@ -358,7 +337,7 @@ class Dizilla : MainAPI() {
         contentJson.result?.forEach { item ->
             val name = item.title.toString()
             val link = fixUrl(item.slug.toString())
-            val posterLink = item.poster.toString()
+            val posterLink = fixPosterUrl(item.poster.toString()) ?: ""
             val toSearchResponse = toSearchResponse(name, link, posterLink)
             veriler.add(toSearchResponse)
         }
@@ -383,7 +362,7 @@ class Dizilla : MainAPI() {
         val mainReq = app.get(url, interceptor = interceptor)
         val document = mainReq.document
         val title = document.selectFirst("div.poster.poster h2")?.text() ?: return null
-        val poster = fixUrlNull(document.selectFirst("div.w-full.page-top.relative img")?.attr("src"))
+        val poster = fixPosterUrl(fixUrlNull(document.selectFirst("div.w-full.page-top.relative img")?.attr("src")))
         val year =
             document.select("div.w-fit.min-w-fit")[1].selectFirst("span.text-sm.opacity-60")?.text()
                 ?.split(" ")?.last()?.toIntOrNull()
@@ -484,7 +463,7 @@ class Dizilla : MainAPI() {
             }
 
             if (!linkFound) {
-                Log.e("DizillaDebug", "HATA: Regex taraması link bulamadı. Ham Veri: ${decodedData?.take(500)}")
+                Log.e("DizillaDebug", "HATA: Regex taraması link bulamadı. Ham Veri: ${decodedData.take(500)}")
             }
 
             linkFound
@@ -496,6 +475,24 @@ class Dizilla : MainAPI() {
         }
     }
 
+    private fun fixPosterUrl(url: String?): String? {
+        if (url.isNullOrEmpty()) return url
+
+        // AMP CDN URL'lerini temizle:
+        // Örn: https://images-macellan-online.cdn.ampproject.org/i/s/images.macellan.online/...
+        // Sonuç: https://images.macellan.online/...
+        return if (url.contains("cdn.ampproject.org")) {
+            val regex = Regex("""cdn\.ampproject\.org/[^/]+/s/(.+)$""")
+            val match = regex.find(url)
+            if (match != null) {
+                "https://${match.groupValues[1]}"
+            } else {
+                url
+            }
+        } else {
+            url
+        }
+    }
     private fun decryptDizillaResponse(response: String): String? {
         try {
             val fullData = Base64.decode(response, Base64.DEFAULT)
