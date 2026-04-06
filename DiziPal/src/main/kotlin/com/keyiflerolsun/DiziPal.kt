@@ -5,22 +5,34 @@ package com.keyiflerolsun
 import android.util.Log
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.fixUrlNull
+import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.network.CloudflareKiller
-import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.newEpisode
+import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newMovieLoadResponse
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesLoadResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 import okhttp3.Interceptor
 import okhttp3.Response
-import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import org.json.JSONArray
-import java.security.MessageDigest
 import javax.crypto.Cipher
-import javax.crypto.spec.IvParameterSpec
-import javax.crypto.spec.SecretKeySpec
-import java.util.Base64
 import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 class DiziPal : MainAPI() {
     override var mainUrl              = "https://dizipal1545.com"
@@ -239,33 +251,33 @@ class DiziPal : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        android.util.Log.d("DiziPal", "--> loadLinks ÇAĞRILDI. Gelen URL: $data")
+        Log.d("DiziPal", "--> loadLinks ÇAĞRILDI. Gelen URL: $data")
         val doc = app.get(data).document
         
         // Şifreli div'i bul
         val encryptedText = doc.selectFirst("div[data-rm-k=true]")?.text() ?: ""
-        android.util.Log.d("DiziPal", "--> Şifreli metin uzunluğu: ${encryptedText.length}")
+        Log.d("DiziPal", "--> Şifreli metin uzunluğu: ${encryptedText.length}")
         
         var iframeUrl = if (encryptedText.isNotEmpty()) {
-            android.util.Log.d("DiziPal", "--> Şifreli veri bulundu, decrypt işlemine geçiliyor...")
+            Log.d("DiziPal", "--> Şifreli veri bulundu, decrypt işlemine geçiliyor...")
             decryptDizipalData(encryptedText)
         } else {
-            android.util.Log.w("DiziPal", "--> DİKKAT: Şifreli veri DOM'da YOK! Fallback iframe aranıyor...")
+            Log.w("DiziPal", "--> DİKKAT: Şifreli veri DOM'da YOK! Fallback iframe aranıyor...")
             doc.selectFirst("iframe")?.attr("src") ?: ""
         }
 
-        android.util.Log.d("DiziPal", "--> Elde edilen Ham Iframe URL: $iframeUrl")
+        Log.d("DiziPal", "--> Elde edilen Ham Iframe URL: $iframeUrl")
 
         if (iframeUrl.isNotEmpty()) {
             if (iframeUrl.startsWith("//")) {
                 iframeUrl = "https:$iframeUrl"
             }
-            android.util.Log.d("DiziPal", "--> Extractor'a gönderilen Final URL: $iframeUrl")
+            Log.d("DiziPal", "--> Extractor'a gönderilen Final URL: $iframeUrl")
             
             // Extractor'ı tetikle
             loadExtractor(iframeUrl, data, subtitleCallback, callback)
         } else {
-            android.util.Log.e("DiziPal", "--> HATA: iframeUrl tamamen BOŞ. Video linki bulunamadı!")
+            Log.e("DiziPal", "--> HATA: iframeUrl tamamen BOŞ. Video linki bulunamadı!")
         }
         return true
     }
@@ -281,32 +293,32 @@ class DiziPal : MainAPI() {
             val passphrase = "3hPn4uCjTVtfYWcjIcoJQ4cL1WWk1qxXI39egLYOmNv6IblA7eKJz68uU3eLzux1biZLCms0quEjTYniGv5z1JcKbNIsDQFSeIZOBZJz4is6pD7UyWDggWWzTLBQbHcQFpBQdClnuQaMNUHtLHTpzCvZy33p6I7wFBvL4fnXBYH84aUIyWGTRvM2G5cfoNf4705tO2kv"
 
             val ctMatch = """"ciphertext"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) 
-                ?: return "".also { android.util.Log.e("DiziPal", "--> HATA: Regex 'ciphertext' değerini bulamadı!") }
+                ?: return "".also { Log.e("DiziPal", "--> HATA: Regex 'ciphertext' değerini bulamadı!") }
                 
             val ivMatch = """"iv"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) 
-                ?: return "".also { android.util.Log.e("DiziPal", "--> HATA: Regex 'iv' değerini bulamadı!") }
+                ?: return "".also { Log.e("DiziPal", "--> HATA: Regex 'iv' değerini bulamadı!") }
                 
             val saltMatch = """"salt"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1) 
-                ?: return "".also { android.util.Log.e("DiziPal", "--> HATA: Regex 'salt' değerini bulamadı!") }
+                ?: return "".also { Log.e("DiziPal", "--> HATA: Regex 'salt' değerini bulamadı!") }
 
-            android.util.Log.d("DiziPal", "--> Regex başarılı. Key türetiliyor...")
+            Log.d("DiziPal", "--> Regex başarılı. Key türetiliyor...")
 
             val salt = saltMatch.decodeHex()
             val iv = ivMatch.decodeHex()
             val ciphertext = android.util.Base64.decode(ctMatch, android.util.Base64.DEFAULT)
 
-            val factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512")
-            val spec = javax.crypto.spec.PBEKeySpec(passphrase.toCharArray(), salt, 999, 256)
+            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512")
+            val spec = PBEKeySpec(passphrase.toCharArray(), salt, 999, 256)
             val secretKey = factory.generateSecret(spec)
-            val secret = javax.crypto.spec.SecretKeySpec(secretKey.encoded, "AES")
+            val secret = SecretKeySpec(secretKey.encoded, "AES")
 
-            val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
-            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, secret, javax.crypto.spec.IvParameterSpec(iv))
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, secret, IvParameterSpec(iv))
 
             val decryptedBytes = cipher.doFinal(ciphertext)
-            var finalUrl = String(decryptedBytes, kotlin.text.Charsets.UTF_8).replace("\\/", "/")
+            var finalUrl = String(decryptedBytes, Charsets.UTF_8).replace("\\/", "/")
 
-            android.util.Log.d("DiziPal", "--> AES Çözümleme Başarılı. İlk Çıktı: $finalUrl")
+            Log.d("DiziPal", "--> AES Çözümleme Başarılı. İlk Çıktı: $finalUrl")
 
             if (finalUrl.startsWith("://")) {
                 finalUrl = "https$finalUrl"
@@ -318,7 +330,7 @@ class DiziPal : MainAPI() {
 
             finalUrl
         } catch (e: Exception) {
-            android.util.Log.e("DiziPal", "--> HATA: Decryption sırasında Exception fırlatıldı! Mesaj: ${e.message}")
+            Log.e("DiziPal", "--> HATA: Decryption sırasında Exception fırlatıldı! Mesaj: ${e.message}")
             e.printStackTrace()
             ""
         }
