@@ -38,6 +38,12 @@ class DizipalPlayer : ExtractorApi() {
                     fileMatches.forEach { matchResult ->
                         var fileUrl = matchResult.groupValues[1].replace("\\/", "/")
 
+                        if (fileUrl.startsWith("//")) {
+                            fileUrl = "https:$fileUrl"
+                        } else if (!fileUrl.startsWith("http")) {
+                            fileUrl = "https://$fileUrl"
+                        }
+
                         if (fileUrl.contains("m.php")) {
                             fileUrl = fileUrl.replace("m.php", "master.m3u8")
                         }
