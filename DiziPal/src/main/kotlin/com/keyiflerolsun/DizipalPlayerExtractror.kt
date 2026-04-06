@@ -49,7 +49,7 @@ class DizipalPlayer : ExtractorApi() {
                                     url = fileUrl,
                                     type = ExtractorLinkType.M3U8
                                 ) {
-                                    headers = mapOf("Origin" to domain, "Referer" to referer? )
+                                    headers = mapOf("Origin" to domain, "Referer" to (referer ?: url))
                                     Qualities.Unknown.value
                                 }
                             )
