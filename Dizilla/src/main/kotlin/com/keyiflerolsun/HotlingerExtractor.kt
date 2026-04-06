@@ -32,7 +32,7 @@ class FourPichive : ContentX() {
     override var mainUrl = "https://four.pichive.online"
 }
 
-class SNplayer : ContentX() {
-    override var name    = "SNplayer"
-    override var mainUrl = "https://sn.dplayer82.site"
+class Dplayer : ContentX() {
+    override var name    = "Dplayer"
+    override var mainUrl = "sn.dplayer82.site"
 }
