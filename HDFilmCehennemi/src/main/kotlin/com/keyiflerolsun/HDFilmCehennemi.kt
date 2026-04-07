@@ -205,38 +205,38 @@ class HDFilmCehennemi : MainAPI() {
     }
 
 private fun dcHello(parts: List<String>): String {
-    // 1. Diziyi Birleştir
+    // 1. Birleştir
     val joined = parts.joinToString("")
 
-    // 2. ROT13 Uygula (Düz metin üzerinde yapıyoruz)
-    val rot = joined.map { c ->
-        when (c) {
-            in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-            in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-            else -> c
-        }
-    }.joinToString("")
+    // 2. Tersine Çevir (YENİ SIRA: İlk işlem bu)
+    val reversed = joined.reversed()
 
-    // 3. Base64 Decode (YENİ SIRA: Ters çevirmeden ÖNCE çözüyoruz)
-    val decodedBytes = android.util.Base64.decode(rot, android.util.Base64.DEFAULT)
-    val size = decodedBytes.size
+    // 3. Base64 Decode
+    val decodedBytes = android.util.Base64.decode(reversed, android.util.Base64.DEFAULT)
 
-    // 4 & 5. Tersine Çevirme ve Unmix İşlemlerini TEK DÖNGÜDE birleştiriyoruz
+    // 4 & 5. ROT13 ve Unmix İşlemlerini tek döngüde hallediyoruz
     val unmix = StringBuilder()
-    for (i in 0 until size) {
-        // Reverse Mantığı: Diziyi sondan başa doğru okuyoruz
-        val originalIndex = size - 1 - i
-        
-        // Byte'ı JS'deki gibi unsigned (işaretsiz) olarak alıp işliyoruz
-        val charCode = decodedBytes[originalIndex].toInt() and 0xFF 
-        
-        // Unmix Matematiksel Formülü
+    for (i in decodedBytes.indices) {
+        // İşaretsiz byte olarak okuyoruz (and 0xFF)
+        val b = decodedBytes[i].toInt() and 0xFF
+        var c = b.toChar()
+
+        // ROT13 Uygulama (Sadece ASCII harflerine)
+        if (c in 'a'..'z') {
+            c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+        } else if (c in 'A'..'Z') {
+            c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+        }
+
+        // Unmix Matematiksel Döngüsü
+        val charCode = c.code
         val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
         unmix.append(newChar.toChar())
     }
 
     return unmix.toString()
 }
+
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
