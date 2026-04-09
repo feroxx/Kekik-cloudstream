@@ -204,37 +204,76 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-private fun dcHello(parts: List<String>): String {
-    // 1. Birleştir
-    val joined = parts.joinToString("")
+    private fun dcHello(parts: List<String>): String {
+        val s = parts.joinToString("")
 
-    // 2. Tersine Çevir
-    val reversed = joined.reversed()
+        fun String.rot13(): String = this.map { c ->
+            when (c) {
+                in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+                in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+                else -> c
+            }
+        }.joinToString("")
 
-    // 3. ROT13 Uygula (YENİ SIRA: Base64'ten ÖNCE, düz metin üzerinde yapıyoruz)
-    val rot = reversed.map { c ->
-        when (c) {
-            in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-            in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-            else -> c
+        fun ByteArray.rot13(): ByteArray {
+            val res = ByteArray(this.size)
+            for (i in this.indices) {
+                val b = this[i].toInt() and 0xFF
+                var c = b.toChar()
+                if (c in 'a'..'z') {
+                    c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
+                } else if (c in 'A'..'Z') {
+                    c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+                }
+                res[i] = c.code.toByte()
+            }
+            return res
         }
-    }.joinToString("")
 
-    // 4. Base64 Decode
-    val decodedBytes = android.util.Base64.decode(rot, android.util.Base64.DEFAULT)
+        fun String.b64(): ByteArray? = try { android.util.Base64.decode(this, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
+        fun ByteArray.b64(): ByteArray? = try { android.util.Base64.decode(this, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
 
-    // 5. Unmix (Matematiksel Döngü)
-    val unmix = StringBuilder()
-    for (i in decodedBytes.indices) {
-        // İşaretsiz byte okumak için and 0xFF ekliyoruz
-        val charCode = decodedBytes[i].toInt() and 0xFF 
-        
-        val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
-        unmix.append(newChar.toChar())
+        fun ByteArray.unmix(): String {
+            val sb = StringBuilder()
+            for (i in this.indices) {
+                val charCode = this[i].toInt() and 0xFF
+                val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
+                sb.append(newChar.toChar())
+            }
+            return sb.toString()
+        }
+
+        fun isValid(result: String?): Boolean {
+            if (result.isNullOrEmpty() || result.length < 10) return false
+            val isGarbage = result.any { it.code !in 32..126 }
+            return !isGarbage
+        }
+
+        val strategies = listOf<() -> String?>(
+            { s.rot13().reversed().b64()?.unmix() },
+            { s.rot13().b64()?.reversedArray()?.unmix() },
+            { s.reversed().b64()?.rot13()?.unmix() },
+            { s.reversed().rot13().b64()?.unmix() },
+            { s.b64()?.rot13()?.reversedArray()?.unmix() },
+            { s.reversed().b64()?.b64()?.unmix() },
+            { s.b64()?.reversedArray()?.rot13()?.unmix() },
+            { s.rot13().reversed().b64()?.b64()?.unmix() }
+        )
+
+        // Stratejileri sırayla dene
+        for (strategy in strategies) {
+            try {
+                val result = strategy()
+                if (isValid(result)) {
+                    return result!!
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        return ""
     }
-
-    return unmix.toString()
-}
  
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
