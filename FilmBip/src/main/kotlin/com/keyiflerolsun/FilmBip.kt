@@ -156,7 +156,7 @@ private fun Element.toSearchResult(): SearchResponse? {
         Log.d("FLB", "data » $data")
         val document = app.get(data).document
 
-        document.select("div.tv-spoox2").forEach {
+        document.select("tv-spoox2").forEach {
             val iframe = fixUrlNull(it.selectFirst("iframe")?.attr("src")) ?: return@forEach
             Log.d("FLB", "iframe » $iframe")
 
