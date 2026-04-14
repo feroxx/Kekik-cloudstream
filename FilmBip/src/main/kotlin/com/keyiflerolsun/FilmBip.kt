@@ -70,7 +70,7 @@ class FilmBip : MainAPI() {
 
 override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
     val url = if (page == 1) request.data else "${request.data.removeSuffix("/")}/$page"
-    val document = app.get(url, interceptor = interceptor).document
+    val document = app.get(url, timeout = 10000, interceptor = interceptor).document
     val home = document.select("div.poster-long").mapNotNull { it.toSearchResult() }
 
     return newHomePageResponse(request.name, home)
