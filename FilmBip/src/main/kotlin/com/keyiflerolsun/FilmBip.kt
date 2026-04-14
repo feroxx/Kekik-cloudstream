@@ -70,7 +70,7 @@ class FilmBip : MainAPI() {
 
 override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
     val url = if (page == 1) request.data else "${request.data.removeSuffix("/")}/$page"
-    val document = app.get(url).document
+    val document = app.get(url, interceptor = interceptor).document
     val home = document.select("div.poster-long").mapNotNull { it.toSearchResult() }
 
     return newHomePageResponse(request.name, home)
@@ -139,7 +139,7 @@ private fun Element.toSearchResult(): SearchResponse? {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = interceptor).document
 
         val title  = document.selectFirst("div.page-title h1")?.text()?.trim() ?: return null
         val poster = fixUrlNull(document.selectFirst("meta[property=og:image]")?.attr("content")) ?: return null
