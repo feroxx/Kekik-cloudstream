@@ -6,6 +6,7 @@ import android.util.Log
 import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.extractors.YoutubeExtractor
@@ -21,6 +22,28 @@ class FilmBip : MainAPI() {
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie)
 
+	override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
+    override var sequentialMainPageDelay       = 150L  // ? 0.15 saniye
+    override var sequentialMainPageScrollDelay = 150L  // ? 0.15 saniye
+
+    // ! CloudFlare v2
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request  = chain.request()
+            val response = chain.proceed(request)
+            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
+
+            if (doc.html().contains("Just a moment")) {
+                return cloudflareKiller.intercept(chain)
+            }
+
+            return response
+        }
+	}
+	
     override val mainPage = mainPageOf(
         "${mainUrl}/filmler/"                        to "Yeni Filmler",
         "${mainUrl}/film/tur/aile/"                   to "Aile Filmleri",
