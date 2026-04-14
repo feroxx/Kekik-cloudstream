@@ -80,7 +80,7 @@ private fun Element.toSearchResult(): SearchResponse? {
     val title = this.selectFirst("a.block img")?.attr("alt")?.trim() ?: return null
     val href = fixUrlNull(this.selectFirst("a.block")?.attr("href")) ?: return null
     
-    val imgElement = this.selectFirst("a.block img.lazy")
+    val imgElement = this.selectFirst("a.block img")
     if (imgElement == null) {
         Log.d("FLB", "imgElement is null")
         return null
@@ -156,7 +156,7 @@ private fun Element.toSearchResult(): SearchResponse? {
         Log.d("FLB", "data » $data")
         val document = app.get(data).document
 
-        document.select("div#tv-spoox2").forEach {
+        document.select("div.tv-spoox2").forEach {
             val iframe = fixUrlNull(it.selectFirst("iframe")?.attr("src")) ?: return@forEach
             Log.d("FLB", "iframe » $iframe")
 
