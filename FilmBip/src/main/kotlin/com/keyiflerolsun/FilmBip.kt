@@ -76,33 +76,38 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
     return newHomePageResponse(request.name, home)
 }
 
-private fun Element.toSearchResult(): SearchResponse? {
-    val title = this.selectFirst("a.block img")?.attr("alt")?.trim() ?: return null
-    val href = fixUrlNull(this.selectFirst("a.block")?.attr("href")) ?: return null
-    
-    val imgElement = this.selectFirst("a.block img")
-    if (imgElement == null) {
-        Log.d("FLB", "imgElement is null")
-        return null
+    private fun Element.toSearchResult(): SearchResponse? {
+        // 1. Title'ı img alt yerine doğrudan h2'den (veya fallback olarak img alt'tan) alıyoruz
+        val title = this.selectFirst("h2.truncate")?.text()?.trim()
+            ?: this.selectFirst("img")?.attr("alt")?.trim()
+            ?: return null
+
+        // 2. Class bağımlılığını kaldırdık. Direkt div içindeki ilk 'a' etiketinin href'ine bakıyoruz.
+        val href = fixUrlNull(this.selectFirst("a[href]")?.attr("href")) ?: return null
+
+        // 3. Yine class bağımlılığı olmadan doğrudan img'yi çekiyoruz.
+        // poster-long div'i içinde zaten aradığımız tek bir ana resim var.
+        val imgElement = this.selectFirst("img")
+        if (imgElement == null) {
+            Log.d("FLB", "imgElement is null for title: $title")
+            return null
+        }
+
+        // 4. Kotlin'in nimetlerinden faydalanarak daha temiz bir url seçimi (data-src öncelikli)
+        val posterUrl = fixUrlNull(
+            imgElement.attr("data-src").takeIf { it.isNotBlank() }
+                ?: imgElement.attr("src").takeIf { it.isNotBlank() }
+        )
+
+        if (posterUrl == null) {
+            Log.d("FLB", "Geçerli bir resim URL'si bulunamadı: $title")
+            return null
+        }
+
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            this.posterUrl = posterUrl
+        }
     }
-
-    val posterUrl = when {
-		imgElement.hasAttr("data-src") && imgElement.attr("data-src").isNotBlank() -> {
-            Log.d("FLB", "Using data-src: ${imgElement.attr("data-src")}")
-            fixUrlNull(imgElement.attr("data-src"))
-        }
-        imgElement.hasAttr("src") && imgElement.attr("src").isNotBlank() -> {
-            Log.d("FLB", "Using src: ${imgElement.attr("src")}")
-            fixUrlNull(imgElement.attr("src"))
-        }
-        else -> {
-            Log.d("FLB", "No valid src or data-src found")
-            null
-        }
-    } ?: return null
-
-    return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
-}
 
     override suspend fun search(query: String): List<SearchResponse> {
         val responseRaw = app.post(
@@ -152,15 +157,18 @@ private fun Element.toSearchResult(): SearchResponse? {
         }
     }
 
-     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("FLB", "data » $data")
         val document = app.get(data).document
 
-        document.select("tv-spoox2").forEach {
-            val iframe = fixUrlNull(it.selectFirst("iframe")?.attr("src")) ?: return@forEach
-            Log.d("FLB", "iframe » $iframe")
+        // ID tekil olduğu için forEach yerine doğrudan hedefi seçiyoruz
+        val iframeSrc = fixUrlNull(document.selectFirst("#tv-spoox2 iframe")?.attr("src"))
 
-            loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
+        if (iframeSrc != null) {
+            Log.d("FLB", "iframeSrc » $iframeSrc")
+            loadExtractor(iframeSrc, "$mainUrl/", subtitleCallback, callback)
+        } else {
+            Log.d("FLB", "tv-spoox2 div'i veya içindeki iframe bulunamadı.")
         }
 
         return true
