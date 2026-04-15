@@ -8,8 +8,8 @@ import com.lagradost.cloudstream3.utils.*
 import com.fasterxml.jackson.annotation.JsonProperty
 
 open class HDPlayerSystem : ExtractorApi() {
-    override val name            = "HDPlayerSystem"
-    override val mainUrl         = "https://hdplayersystem.com"
+    override val name            = "HDMomPlayer"
+    override val mainUrl         = "https://hdmomplayer.com"
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
