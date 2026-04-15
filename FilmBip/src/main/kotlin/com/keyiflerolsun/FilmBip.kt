@@ -159,7 +159,7 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("FLB", "data » $data")
-        val document = app.get(data).document
+        val document = app.get(data, interceptor = interceptor).document
 
         // ID tekil olduğu için forEach yerine doğrudan hedefi seçiyoruz
         val iframeSrc = fixUrlNull(document.selectFirst("#tv-spoox2 iframe")?.attr("src"))
