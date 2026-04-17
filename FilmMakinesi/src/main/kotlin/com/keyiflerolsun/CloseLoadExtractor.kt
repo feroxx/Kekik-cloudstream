@@ -88,7 +88,7 @@ class CloseLoad : ExtractorApi() {
 
             // 3. Kotlin Üzerinde Deşifre İşlemi (JS'in tam bir replikası)
             val value = parts.joinToString("")
-            var result = String(Base64.decode(value, Base64.NO_WRAP), Charsets.UTF_8)
+            var result = String(Base64.decode(value, Base64.NO_WRAP), Charsets.ISO_8859_1)
 
             result = result.reversed() // Ters çevir
 
