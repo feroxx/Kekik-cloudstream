@@ -1,20 +1,29 @@
 package com.keyiflerolsun
 
-import android.util.Base64
+import android.content.Context
 import android.util.Log
-import com.lagradost.cloudstream3.SubtitleFile
+import android.webkit.WebView
+import com.lagradost.cloudstream3.Prerelease
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.jsoup.nodes.Document
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
+import android.util.Base64
 
 class CloseLoad : ExtractorApi() {
     override val name = "CloseLoad"
     override val mainUrl = "https://closeload.filmmakinesi.to"
     override val requiresReferer = true
 
+    @OptIn(Prerelease::class)
     override suspend fun getUrl(
         url: String,
         referer: String?,
@@ -22,17 +31,18 @@ class CloseLoad : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val headers2 = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-            "Referer" to "$mainUrl/",
-            "Origin" to mainUrl
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0",
+            "Referer" to "https://closeload.filmmakinesi.to/",
+            "Origin" to "https://closeload.filmmakinesi.to"
         )
 
         try {
             val response = app.get(url, referer = mainUrl, headers = headers2)
-            val html = response.text // Jsoup objesi yerine saf HTML metni alıyoruz
+            val document = response.document
 
-            // 1. Gerçek URL'yi Native Olarak Deşifre Et (WebView'a veda ediyoruz)
-            val realUrl = decryptNative(html)
+            // WebView ile JS deşifre işlemi
+            // 'app.context' Cloudstream'in sağladığı global context'tir.
+            val realUrl = decryptWithWebView(com.lagradost.cloudstream3.CloudStreamApp.context, document)
 
             if (!realUrl.isNullOrBlank() && realUrl.startsWith("http")) {
                 callback.invoke(
@@ -44,108 +54,170 @@ class CloseLoad : ExtractorApi() {
                     ) {
                         quality = Qualities.P1080.value
                         headers = mapOf(
-                            "Referer" to "$mainUrl/",
+                            "Referer" to "https://closeload.filmmakinesi.to/",
                             "User-Agent" to headers2["User-Agent"]!!
                         )
                     }
                 )
             } else {
-                Log.e("Kekik_${this.name}", "Real URL native deşifre edilemedi.")
+                Log.e("Kekik_${this.name}", "Real URL deşifre edilemedi.")
             }
 
-            // 2. Altyazıları JWPlayer JSON bloğundan Regex ile çıkar
-            processSubtitles(html, subtitleCallback)
+            processSubtitles(response.document, subtitleCallback)
 
         } catch (e: Exception) {
             Log.e("Kekik_${this.name}", "Hata: ${e.message}")
         }
     }
 
-    private fun decryptNative(html: String): String? {
+    private suspend fun decryptWithWebView(context: Context?, document: Document): String? = withContext(Dispatchers.Main) {
         try {
-            // Sitenin JS fonksiyonunu barındıran script bloğunu hedefliyoruz.
-            val scriptBlockMatch = """<script[^>]*>(.*?atob\(.*?charCodeAt.*?)</script>""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
-            val scriptContent = scriptBlockMatch?.groupValues?.get(1)
+            // 1. Şifreli Packer kodunu Jsoup ile buluyoruz (Boşluk/Satır bağımsız Regex ile)
+            val scriptContent = document.select("script").map { it.data() }.firstOrNull {
+                it.replace("\\s".toRegex(), "").contains("eval(function(p,a,c,k,e,d)")
+            }
 
             if (scriptContent.isNullOrBlank()) {
-                Log.e("Kekik_${this.name}", "Deşifre Başarısız: Gerekli algoritma bloğu bulunamadı.")
-                return null
+                Log.e("Kekik_Extractor", "Deşifre Başarısız: Packer scripti bulunamadı.")
+                return@withContext null
             }
 
-            // 1. Şifreli diziyi çıkar: ["l9WRZGaIrH", "63bUp7jIZN", ...]
-            val arrayMatch = """\(\[((?:"[^"]+",?\s*)+)\]\)""".toRegex().find(scriptContent)
-            val parts = arrayMatch?.groupValues?.get(1)?.split(",")?.map {
-                // Escape karakterlerini düzeltiyoruz (örn: \/ -> /)
-                it.trim().trim('"').replace("\\/", "/")
-            }
+            // 2. JS Motorunu çökertmemek için Base64 köprüsü
+            val base64Script = Base64.encodeToString(scriptContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
-            // 2. Sitenin yarın bir gün sayıları değiştirmesine karşı, modül değerlerini dinamik çıkarıyoruz (örn: 399756995 % (i + 5))
-            val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(scriptContent)
-            val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
-            val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
+            val webView = context?.let { WebView(it) }
+            webView?.settings?.javaScriptEnabled = true
 
-            if (parts.isNullOrEmpty()) return null
-
-            // 3. Kotlin Üzerinde Deşifre İşlemi (JS'in tam bir replikası)
-            val value = parts.joinToString("")
-            var result = String(Base64.decode(value, Base64.NO_WRAP), Charsets.ISO_8859_1)
-
-            result = result.reversed() // Ters çevir
-
-            // ROT13 / Caesar şifrelemesi
-            val rot13 = StringBuilder()
-            for (c in result) {
-                if (c in 'a'..'z') {
-                    val shifted = c.code + 13
-                    rot13.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
-                } else if (c in 'A'..'Z') {
-                    val shifted = c.code + 13
-                    rot13.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
-                } else {
-                    rot13.append(c)
+            // Logcat bağlantısı
+            webView?.webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                    Log.d("Kekik_JS", "LOG: ${consoleMessage?.message()}")
+                    return true
                 }
             }
-            result = rot13.toString()
 
-            // Modulo Unmix (Değişken anahtarlı çözme)
-            val unmix = StringBuilder()
-            for (i in result.indices) {
-                var charCode = result[i].code.toLong()
-                charCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
-                unmix.append(charCode.toInt().toChar())
-            }
+            // 3. JAVASCRIPT TARAFI: DOM Zehirleme + Deep Proxy
+            val jsToExecute = """
+                (function() {
+                    try {
+                        // BÜYÜK DUVARI YIKIYORUZ: Cookie SecurityError Bypass!
+                        try {
+                            var fakeCookie = "";
+                            Object.defineProperty(Document.prototype, 'cookie', {
+                                get: function() { return fakeCookie; },
+                                set: function(v) { fakeCookie = v; },
+                                configurable: true
+                            });
+                            console.log("Cookie bypass kalkanı aktif.");
+                        } catch(e) { console.log("Cookie bypass uyarisiz gecildi."); }
 
-            return unmix.toString()
+                        var rawScript = decodeURIComponent(escape(window.atob('$base64Script')));
+                        window.extractedUrl = null;
+                        window.proxyDepth = 0;
+                        
+                        // İhtiyacımız olan linkin standartlarını belirliyoruz
+                        function isValidUrl(s) {
+                            return typeof s === 'string' && 
+                                   s.indexOf('http') === 0 && 
+                                   s.length > 20 && 
+                                   s.indexOf(' ') === -1 && 
+                                   (s.indexOf('mp4') !== -1 || s.indexOf('m3u8') !== -1 || s.indexOf('master') !== -1 || s.indexOf('hls') !== -1);
+                        }
+                        
+                        // Deep Proxy: Tüm fonksiyonlara 'Evet' diyen ama içlerindeki linki çalan ajanımız
+                        function createDeepProxy(name) {
+                            var noop = function(){};
+                            return new Proxy(noop, {
+                                get: function(target, prop) {
+                                    if (prop === 'toString' || prop === 'valueOf') return function(){ return name; };
+                                    if (prop === Symbol.toPrimitive) return function(){ return name; };
+                                    if (prop === 'then') return undefined; // Promise hatasını önlemek için
+                                    return createDeepProxy(name + '.' + String(prop));
+                                },
+                                apply: function(target, thisArg, argsList) {
+                                    for (var i = 0; i < argsList.length; i++) {
+                                        var arg = argsList[i];
+                                        
+                                        if (isValidUrl(arg)) window.extractedUrl = arg;
+                                        else if (arg && typeof arg === 'object') {
+                                            for (var k in arg) {
+                                                if (isValidUrl(arg[k])) window.extractedUrl = arg[k];
+                                            }
+                                        }
+                                        else if (typeof arg === 'function') {
+                                            if (window.proxyDepth < 10) {
+                                                window.proxyDepth++;
+                                                try { arg(); } catch(e) {} // Callbackleri zorla çalıştır
+                                                window.proxyDepth--;
+                                            }
+                                        }
+                                    }
+                                    return createDeepProxy(name + '()');
+                                },
+                                set: function() { return true; }
+                            });
+                        }
 
-        } catch (e: Exception) {
-            Log.e("Kekik_${this.name}", "Native Çözümleme Hatası: ${e.message}")
-            return null
-        }
-    }
+                        // Sahte kütüphaneleri yerleştiriyoruz ($, videojs)
+                        window.$ = window.jQuery = createDeepProxy('$');
+                        window.videojs = createDeepProxy('videojs');
+                        
+                        // Orijinal eval'i gasp ediyoruz
+                        var originalEval = window.eval;
+                        window.eval = function(code) {
+                            window.eval = originalEval;
+                            return originalEval(code); // Unpacked kodu çalıştır
+                        };
+                        
+                        // Operasyonu başlat!
+                        try {
+                            originalEval(rawScript);
+                        } catch(e) {
+                            console.log("Packer çalışma detayı: " + e.message);
+                        }
+                        
+                        if (window.extractedUrl) {
+                            console.log("MUKEMMEL: URL avlandı!");
+                            return window.extractedUrl;
+                        }
 
-    private fun processSubtitles(html: String, subtitleCallback: (SubtitleFile) -> Unit) {
-        try {
-            // JWPlayer setup içindeki tracks: [...] bloğunu al
-            val tracksMatch = """tracks\s*:\s*(\[.*?\])""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
-            tracksMatch?.groupValues?.get(1)?.let { tracksJson ->
+                        return "Error: URL bulunamadı. Proxy bos kaldi.";
+                    } catch(e) { 
+                        return "Error: Fatal JS Error - " + e.message; 
+                    }
+                })()
+            """.trimIndent()
 
-                // Her bir altyazı objesini {} bazında ayır
-                val trackPattern = """\{[^}]*\}""".toRegex()
-                val fileRegex = """"file"\s*:\s*"([^"]+)"""".toRegex()
-                val labelRegex = """"label"\s*:\s*"([^"]+)"""".toRegex()
+            suspendCoroutine { cont ->
+                webView?.evaluateJavascript(jsToExecute) { result ->
+                    val cleanResult = result?.trim()?.removeSurrounding("\"")
 
-                trackPattern.findAll(tracksJson).forEach { match ->
-                    val block = match.value
-                    val file = fileRegex.find(block)?.groupValues?.get(1)?.replace("\\/", "/")
-                    val label = labelRegex.find(block)?.groupValues?.get(1) ?: "Altyazı"
-
-                    if (!file.isNullOrBlank() && file.startsWith("http")) {
-                        subtitleCallback.invoke(SubtitleFile(label, file))
+                    if (cleanResult == null || cleanResult == "null" || cleanResult.isEmpty() || cleanResult.startsWith("Error:")) {
+                        Log.e("Kekik_Extractor", "Deşifre Başarısız: $cleanResult")
+                        cont.resume(null)
+                    } else {
+                        Log.i("Kekik_Extractor", "Başarılı! Gerçek Link: $cleanResult")
+                        cont.resume(cleanResult)
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("Kekik_${this.name}", "Altyazı Çözümleme Hatası: ${e.message}")
+            Log.e("Kekik_Extractor", "Sistem Hatası: ${e.message}")
+            null
+        }
+    }
+
+    private fun processSubtitles(document: Document, subtitleCallback: (SubtitleFile) -> Unit) {
+        document.select("track").forEach { track ->
+            val rawSrc = track.attr("src").trim()
+            val label = track.attr("label").ifBlank { track.attr("srclang").ifBlank { "Altyazı" } }
+
+            if (rawSrc.isNotBlank()) {
+                val fullUrl = if (rawSrc.startsWith("http")) rawSrc else mainUrl + rawSrc
+                if (fullUrl.startsWith("http")) {
+                    subtitleCallback(SubtitleFile(label, fullUrl))
+                }
+            }
         }
     }
 }
