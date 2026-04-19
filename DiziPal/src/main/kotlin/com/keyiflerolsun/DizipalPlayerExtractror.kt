@@ -21,31 +21,31 @@ class DizipalPlayer : ExtractorApi() {
             callback: (ExtractorLink) -> Unit
         ) {
             val response = app.get(url, referer = referer).text
-            val openPlayerRegex = """window\.openPlayer\s*\(\s*['"]([^'"]+)['"]""".toRegex()
+            val openPlayerRegex = """"file"\s*:\s*"(/edge/[^"]+)"""".toRegex()
             val playlistId = openPlayerRegex.find(response)?.groupValues?.get(1)
 
             if (playlistId != null) {
                 val domainRegex = """https?://[^/]+""".toRegex()
                 val domain = domainRegex.find(url)?.value ?: "https://dplayer82.site"
-                val apiUrl = "$domain/source2.php?v=$playlistId"
+                val apiUrl = "$domain$playlistId"
 
                 val apiResponse = app.get(apiUrl, referer = url).text
 
                 try {
-                    val fileRegex = """"file"\s*:\s*"([^"]+)"""".toRegex()
+                    val fileRegex = """"URI"\s*:\s*"([^"]+)"""".toRegex()
                     val fileMatches = fileRegex.findAll(apiResponse)
 
                     fileMatches.forEach { matchResult ->
                         var fileUrl = matchResult.groupValues[1].replace("\\/", "/")
 
-                        if (fileUrl.startsWith("//")) {
-                            fileUrl = "https:$fileUrl"
+                        if (fileUrl.startsWith("/")) {
+                            fileUrl = "https:$mainUrl$fileUrl"
                         } else if (!fileUrl.startsWith("http")) {
-                            fileUrl = "https://$fileUrl"
+                            fileUrl = "https://$mainUrl$fileUrl"
                         }
 
-                        if (fileUrl.contains("m.php")) {
-                            fileUrl = fileUrl.replace("m.php", "master.m3u8")
+                        if (fileUrl.contains("variant.php")) {
+                            fileUrl = fileUrl.replace("variant.php", "master.m3u8")
                         }
 
                             callback.invoke(
