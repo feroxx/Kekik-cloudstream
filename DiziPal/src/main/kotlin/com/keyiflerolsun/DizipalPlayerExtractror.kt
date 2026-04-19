@@ -1,5 +1,6 @@
 package com.keyiflerolsun
 
+import android.util.Log
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
@@ -23,12 +24,12 @@ class DizipalPlayer : ExtractorApi() {
             val response = app.get(url, referer = referer).text
             val openPlayerRegex = """"file"\s*:\s*"(/edge/[^"]+)"""".toRegex()
             val playlistId = openPlayerRegex.find(response)?.groupValues?.get(1)
-
+            Log.d("DiziPal", "--> playlistId: $playlistId")
             if (playlistId != null) {
                 val domainRegex = """https?://[^/]+""".toRegex()
                 val domain = domainRegex.find(url)?.value ?: "https://dplayer82.site"
                 val apiUrl = "$domain$playlistId"
-
+                Log.d("DiziPal", "--> apiUrl: $apiUrl")
                 val apiResponse = app.get(apiUrl, referer = url).text
 
                 try {
@@ -42,6 +43,7 @@ class DizipalPlayer : ExtractorApi() {
                             fileUrl = "https:$mainUrl$fileUrl"
                         } else if (!fileUrl.startsWith("http")) {
                             fileUrl = "https://$mainUrl$fileUrl"
+                            Log.d("DiziPal", "--> fileUrl: $fileUrl")
                         }
 
                         if (fileUrl.contains("variant.php")) {
@@ -61,7 +63,7 @@ class DizipalPlayer : ExtractorApi() {
                             )
                         }
                 } catch (e: Exception) {
-                    android.util.Log.e("DiziPal", "--> DPlayer Extractor Hata: ${e.message}")
+                    Log.e("DiziPal", "--> DPlayer Extractor Hata: ${e.message}")
                 }
             }
         }
