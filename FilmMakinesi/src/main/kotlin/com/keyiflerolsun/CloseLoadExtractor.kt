@@ -118,7 +118,7 @@ class CloseLoad : ExtractorApi() {
             for (i in result.indices) {
                 var charCode = result[i].code.toLong()
                 charCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
-                unmix.append(charCode.toChar())
+                unmix.append(charCode.toInt().toChar())
             }
 
             return unmix.toString()
