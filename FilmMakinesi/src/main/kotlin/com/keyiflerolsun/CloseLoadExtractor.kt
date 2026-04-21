@@ -69,16 +69,16 @@ class CloseLoad : ExtractorApi() {
 
     private fun decryptNative(html: String): String? {
         try {
-            // JS fonksiyonunu hedefle (Hem eski hem yeni algoritma tiplerini kapsayacak geniş Regex)
+            // JS fonksiyonunu hedefle
             val scriptBlockMatch = """<script[^>]*>(.*?dc_[a-zA-Z0-9_]+\(.*?</script>)""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
             val scriptContent = scriptBlockMatch?.groupValues?.get(1)
 
             if (scriptContent.isNullOrBlank()) return null
 
-            // 1. Şifreli diziyi çıkar: ["mb95wM5ztM", "nRlxl3rMqa", ...]
+            // 1. Şifreli diziyi çıkar: ["==wlVHJZmh", "Ir+dbbKtHj", ...]
             val arrayMatch = """\(\[((?:"[^"]+",?\s*)+)\]\)""".toRegex().find(scriptContent)
-            val parts = arrayMatch?.groupValues?.get(1)?.split(",")?.map { 
-                it.trim().trim('"').replace("\\/", "/") 
+            val parts = arrayMatch?.groupValues?.get(1)?.split(",")?.map {
+                it.trim().trim('"').replace("\\/", "/")
             }
 
             // 2. Dinamik Modulo Çarpanlarını Çıkar
@@ -90,9 +90,15 @@ class CloseLoad : ExtractorApi() {
 
             var result = parts.joinToString("")
 
-            // --- YENİ ALGORİTMA SIRALAMASI BURADA BAŞLIYOR --- //
+            // --- GÜNCEL ALGORİTMA SIRALAMASI --- //
 
-            // ADIM 1: ROT13 / Caesar şifrelemesi (Artık ilk adım bu)
+            // ADIM 1: Ters Çevir (Reverse)
+            result = result.reversed()
+
+            // ADIM 2: Base64 Decode (Kritik: JS atob simülasyonu için ISO_8859_1 şart)
+            result = String(Base64.decode(result, Base64.NO_WRAP), Charsets.ISO_8859_1)
+
+            // ADIM 3: ROT13 / Caesar şifrelemesi
             val rot13 = StringBuilder()
             for (c in result) {
                 if (c in 'a'..'z') {
@@ -107,17 +113,13 @@ class CloseLoad : ExtractorApi() {
             }
             result = rot13.toString()
 
-            // ADIM 2: Base64 Decode (Kritik nokta: JS'in atob davranışını simüle etmek için hala ISO_8859_1 şart)
-            result = String(Base64.decode(result, Base64.NO_WRAP), Charsets.ISO_8859_1)
-            
-            // ADIM 3: Ters Çevir
-            result = result.reversed() 
-
             // ADIM 4: Modulo Unmix
             val unmix = StringBuilder()
             for (i in result.indices) {
                 var charCode = result[i].code.toLong()
                 charCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
+
+                // Kotlin 1.5+ Tip güvenliği için Long -> Int -> Char dönüşümü
                 unmix.append(charCode.toInt().toChar())
             }
 

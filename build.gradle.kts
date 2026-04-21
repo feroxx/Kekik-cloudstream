@@ -65,7 +65,7 @@ subprojects {
         compileSdk = 36
 
         defaultConfig {
-            minSdk = 33
+            minSdk = 21
         }
 
         lint {
