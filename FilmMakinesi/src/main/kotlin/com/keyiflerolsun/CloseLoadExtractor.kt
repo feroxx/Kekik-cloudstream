@@ -69,67 +69,85 @@ class CloseLoad : ExtractorApi() {
 
     private fun decryptNative(html: String): String? {
         try {
-            // JS fonksiyonunu hedefle
+            // JS fonksiyon bloğunu komple hedefle
             val scriptBlockMatch = """<script[^>]*>(.*?dc_[a-zA-Z0-9_]+\(.*?</script>)""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
-            val scriptContent = scriptBlockMatch?.groupValues?.get(1)
-            Log.d("Flmm", "--> scriptContent: $scriptContent")
-            if (scriptContent.isNullOrBlank()) return null
+            val scriptContent = scriptBlockMatch?.groupValues?.get(1) ?: return null
 
-            // 1. Şifreli diziyi çıkar: ["==wlVHJZmh", "Ir+dbbKtHj", ...]
+            // 1. Şifreli diziyi çıkar
             val arrayMatch = """\(\[((?:"[^"]+",?\s*)+)\]\)""".toRegex().find(scriptContent)
-            val parts = arrayMatch?.groupValues?.get(1)?.split(",")?.map {
-                it.trim().trim('"').replace("\\/", "/")
-            }
+            val parts = arrayMatch?.groupValues?.get(1)?.split(",")?.map { 
+                it.trim().trim('"').replace("\\/", "/") 
+            } ?: return null
 
             // 2. Dinamik Modulo Çarpanlarını Çıkar
             val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(scriptContent)
             val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
             val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
 
-            if (parts.isNullOrEmpty()) return null
+            // JS Fonksiyonunun gövdesini izole et
+            val functionBodyMatch = """function\s+dc_[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{([^}]+)\}""".toRegex().find(scriptContent)
+            val functionBody = functionBodyMatch?.groupValues?.get(1) ?: scriptContent
+
+            // --- İŞTE SİHİR BURADA: OPERASYON SIRASINI DİNAMİK OKU --- //
+            val reverseIdx = functionBody.indexOf(".reverse()")
+            val atobIdx = functionBody.indexOf("atob(")
+            val rot13Idx = functionBody.indexOf(".replace(/[a-zA-Z]/g")
+
+            // Hangi işlemin JS'de hangi sırada yazıldığını bul ve sırala
+            val operations = listOf(
+                Pair(reverseIdx, "reverse"),
+                Pair(atobIdx, "atob"),
+                Pair(rot13Idx, "rot13")
+            ).filter { it.first != -1 }.sortedBy { it.first }
 
             var result = parts.joinToString("")
 
-            // --- GÜNCEL ALGORİTMA SIRALAMASI --- //
-
-            // ADIM 1: Ters Çevir (Reverse)
-            result = result.reversed()
-
-            // ADIM 2: Base64 Decode (Kritik: JS atob simülasyonu için ISO_8859_1 şart)
-            result = String(Base64.decode(result, Base64.NO_WRAP), Charsets.ISO_8859_1)
-
-            // ADIM 3: ROT13 / Caesar şifrelemesi
-            val rot13 = StringBuilder()
-            for (c in result) {
-                if (c in 'a'..'z') {
-                    val shifted = c.code + 13
-                    rot13.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
-                } else if (c in 'A'..'Z') {
-                    val shifted = c.code + 13
-                    rot13.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
-                } else {
-                    rot13.append(c)
+            // İşlemleri sitenin belirlediği sıraya göre dinamik olarak çalıştır
+            for (op in operations) {
+                when (op.second) {
+                    "reverse" -> {
+                        result = result.reversed()
+                    }
+                    "atob" -> {
+                        // JS atob() simülasyonu: UTF-8 yerine ISO_8859_1 korunmalı
+                        result = String(Base64.decode(result, Base64.NO_WRAP), Charsets.ISO_8859_1)
+                    }
+                    "rot13" -> {
+                        val rot13 = StringBuilder()
+                        for (c in result) {
+                            if (c in 'a'..'z') {
+                                val shifted = c.code + 13
+                                rot13.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
+                            } else if (c in 'A'..'Z') {
+                                val shifted = c.code + 13
+                                rot13.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
+                            } else {
+                                rot13.append(c)
+                            }
+                        }
+                        result = rot13.toString()
+                    }
                 }
             }
-            result = rot13.toString()
 
-            // ADIM 4: Modulo Unmix
+            // --- SON ADIM: Modulo Unmix (Daima en sonda çalışır) --- //
             val unmix = StringBuilder()
             for (i in result.indices) {
-                var charCode = result[i].code.toLong()
-                charCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
-
-                // Kotlin 1.5+ Tip güvenliği için Long -> Int -> Char dönüşümü
-                unmix.append(charCode.toInt().toChar())
+                val charCode = result[i].code.toLong()
+                val decryptedCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
+                
+                // Kotlin 1.5+ Tip güvenliği için Long -> Int -> Char
+                unmix.append(decryptedCode.toInt().toChar())
             }
 
             return unmix.toString()
 
         } catch (e: Exception) {
-            Log.e("Kekik_${this.name}", "Native Çözümleme Hatası: ${e.message}")
+            Log.e("Kekik_Extractor", "Native Çözümleme Hatası: ${e.message}")
             return null
         }
     }
+
 
     private fun processSubtitles(html: String, subtitleCallback: (SubtitleFile) -> Unit) {
         try {
