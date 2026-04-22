@@ -21,12 +21,12 @@
      runs-on: ubuntu-latest
      steps:
        - name: "'src' Depo Kontrolü"
-         uses: actions/checkout@v5
+         uses: actions/checkout@v6
          with:
            path: "src"
  
        - name: "'build' Depo Kontrolü"
-         uses: actions/checkout@v5
+         uses: actions/checkout@v6
          with:
            ref: "builds"
            path: "builds"
@@ -37,12 +37,13 @@
        - name: JDK 17 Ayarla
          uses: actions/setup-java@v5
          with:
-           distribution: adopt
+           distribution: temurin
            java-version: 17
-           cache: gradle
- 
-       - name: Android SDK Ayarla
-         uses: android-actions/setup-android@v3.2.2
+
+       - name: Setup Gradle
+         uses: gradle/actions/setup-gradle@v5
+         with:
+           cache-read-only: false
  
        - name: Eklentileri Derle
          run: |
