@@ -84,8 +84,8 @@ class CloseLoad : ExtractorApi() {
             val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
             val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
 
-            // JS Fonksiyonunun gövdesini izole et
-            val functionBodyMatch = """function\s+dc_[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{([^}]+)\}""".toRegex().find(scriptContent)
+            // JS Fonksiyonunun gövdesini izole et (KRİTİK DÜZELTME: Süslü parantez yerine return unmix satırına kadar alıyoruz)
+            val functionBodyMatch = """function\s+dc_[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{(.*?)return\s+unmix;""".toRegex(RegexOption.DOT_MATCHES_ALL).find(scriptContent)
             val functionBody = functionBodyMatch?.groupValues?.get(1) ?: scriptContent
 
             // --- İŞTE SİHİR BURADA: OPERASYON SIRASINI DİNAMİK OKU --- //
@@ -147,7 +147,6 @@ class CloseLoad : ExtractorApi() {
             return null
         }
     }
-
 
     private fun processSubtitles(html: String, subtitleCallback: (SubtitleFile) -> Unit) {
         try {
