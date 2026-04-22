@@ -72,7 +72,7 @@ class CloseLoad : ExtractorApi() {
             // JS fonksiyonunu hedefle
             val scriptBlockMatch = """<script[^>]*>(.*?dc_[a-zA-Z0-9_]+\(.*?</script>)""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
             val scriptContent = scriptBlockMatch?.groupValues?.get(1)
-
+            Log.d("Flmm", "--> scriptContent: $scriptContent")
             if (scriptContent.isNullOrBlank()) return null
 
             // 1. Şifreli diziyi çıkar: ["==wlVHJZmh", "Ir+dbbKtHj", ...]
