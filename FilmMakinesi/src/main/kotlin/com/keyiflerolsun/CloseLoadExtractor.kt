@@ -69,7 +69,7 @@ class CloseLoad : ExtractorApi() {
 
     private fun decryptNative(html: String): String? {
         try {
-            // JS fonksiyon bloğunu komple hedefle
+            // JS bloğunu yakala
             val scriptBlockMatch = """<script[^>]*>(.*?dc_[a-zA-Z0-9_]+\(.*?</script>)""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
             val scriptContent = scriptBlockMatch?.groupValues?.get(1) ?: return null
 
@@ -84,48 +84,59 @@ class CloseLoad : ExtractorApi() {
             val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
             val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
 
-            // JS Fonksiyonunun gövdesini izole et (KRİTİK DÜZELTME: Süslü parantez yerine return unmix satırına kadar alıyoruz)
-            val functionBodyMatch = """function\s+dc_[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{(.*?)return\s+unmix;""".toRegex(RegexOption.DOT_MATCHES_ALL).find(scriptContent)
-            val functionBody = functionBodyMatch?.groupValues?.get(1) ?: scriptContent
+            // 3. Fonksiyon Gövdesini Regex OLMADAN İzole Et
+            val funcStartIdx = scriptContent.indexOf("function dc_")
+            val funcEndIdx = scriptContent.indexOf("function d1x()", funcStartIdx).takeIf { it != -1 } ?: scriptContent.length
+            val functionBody = if (funcStartIdx != -1) scriptContent.substring(funcStartIdx, funcEndIdx) else scriptContent
 
-            // --- İŞTE SİHİR BURADA: OPERASYON SIRASINI DİNAMİK OKU --- //
+            // 4. KRİTİK DOKUNUŞ: Dinamik ROT (Caesar) Kaydırma (Shift) Değerini Çıkar
+            // JS'teki `c.charCodeAt(0) + 13` veya yeni değer neyse onu dinamik okuruz (bulamazsa default 13)
+            val rotShiftMatch = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex().find(functionBody)
+            val rotShift = rotShiftMatch?.groupValues?.get(1)?.toIntOrNull() ?: 13
+
+            // --- OPERASYON SIRASINI DİNAMİK OKU --- //
             val reverseIdx = functionBody.indexOf(".reverse()")
             val atobIdx = functionBody.indexOf("atob(")
-            val rot13Idx = functionBody.indexOf(".replace(/[a-zA-Z]/g")
+            val rotIdx = functionBody.indexOf(".replace(")
 
-            // Hangi işlemin JS'de hangi sırada yazıldığını bul ve sırala
+            // İşlemlerin JS'deki sırasını bul ve Kotlin'de o sıraya göre diz
             val operations = listOf(
                 Pair(reverseIdx, "reverse"),
                 Pair(atobIdx, "atob"),
-                Pair(rot13Idx, "rot13")
+                Pair(rotIdx, "rot")
             ).filter { it.first != -1 }.sortedBy { it.first }
 
             var result = parts.joinToString("")
 
-            // İşlemleri sitenin belirlediği sıraya göre dinamik olarak çalıştır
+            // İşlemleri sitenin belirlediği sıraya göre ateşle
             for (op in operations) {
                 when (op.second) {
                     "reverse" -> {
                         result = result.reversed()
                     }
                     "atob" -> {
-                        // JS atob() simülasyonu: UTF-8 yerine ISO_8859_1 korunmalı
-                        result = String(Base64.decode(result, Base64.NO_WRAP), Charsets.ISO_8859_1)
+                        // Base64 padding (==) eksikliklerine karşı güvenlik
+                        var paddedResult = result
+                        while (paddedResult.length % 4 != 0) {
+                            paddedResult += "="
+                        }
+                        result = String(Base64.decode(paddedResult, Base64.NO_WRAP), Charsets.ISO_8859_1)
                     }
-                    "rot13" -> {
-                        val rot13 = StringBuilder()
+                    "rot" -> {
+                        // Statik 13 yerine dinamik 'rotShift' kullanıyoruz
+                        val rot = StringBuilder()
                         for (c in result) {
                             if (c in 'a'..'z') {
-                                val shifted = c.code + 13
-                                rot13.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
+                                val shifted = c.code + rotShift
+                                rot.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
                             } else if (c in 'A'..'Z') {
-                                val shifted = c.code + 13
-                                rot13.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
+                                val shifted = c.code + rotShift
+                                rot.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
                             } else {
-                                rot13.append(c)
+                                rot.append(c)
                             }
                         }
-                        result = rot13.toString()
+                        result = rot.toString()
                     }
                 }
             }
@@ -135,8 +146,6 @@ class CloseLoad : ExtractorApi() {
             for (i in result.indices) {
                 val charCode = result[i].code.toLong()
                 val decryptedCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
-                
-                // Kotlin 1.5+ Tip güvenliği için Long -> Int -> Char
                 unmix.append(decryptedCode.toInt().toChar())
             }
 
@@ -147,6 +156,7 @@ class CloseLoad : ExtractorApi() {
             return null
         }
     }
+
 
     private fun processSubtitles(html: String, subtitleCallback: (SubtitleFile) -> Unit) {
         try {
