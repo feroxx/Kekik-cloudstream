@@ -3,10 +3,12 @@ package com.keyiflerolsun
 import android.util.Log
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.newSubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.fixUrl
 import com.lagradost.cloudstream3.utils.newExtractorLink
 
 // DiziPal sınıfının dışına (altına) ekle
@@ -23,6 +25,29 @@ class DizipalPlayer : ExtractorApi() {
         ) {
             val response = app.get(url, referer = referer).text
             val openPlayerRegex = """window\.openPlayer\s*\(\s*['"]([^'"]+)['"]""".toRegex()
+
+            val subUrls = mutableSetOf<String>()
+            Regex(""""file":"((?:\\\\\"|[^"])+)","label":"((?:\\\\\"|[^"])+)"""").findAll(response).forEach {
+                val (subUrlExt, subLangExt) = it.destructured
+
+                val subUrl = subUrlExt.replace("\\/", "/").replace("\\u0026", "&").replace("\\", "")
+                val subLang = subLangExt.replace("\\u0131", "ı").replace("\\u0130", "İ").replace("\\u00fc", "ü").replace("\\u00e7", "ç").replace("\\u011f", "ğ").replace("\\u015f", "ş")
+
+                if (subUrl in subUrls) return@forEach
+                subUrls.add(subUrl)
+
+                subtitleCallback.invoke(
+                    newSubtitleFile(
+                        lang = subLang,
+                        url = fixUrl(subUrl)
+                    ) {
+                        headers = mapOf(
+                            "Referer" to url,
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0"
+                        )
+                    }
+                )
+            }
             val playlistId = openPlayerRegex.find(response)?.groupValues?.get(1)
             Log.d("DiziPal", "--> playlistId: $playlistId")
             if (playlistId != null) {
