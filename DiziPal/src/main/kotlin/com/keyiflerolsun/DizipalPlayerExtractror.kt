@@ -22,32 +22,32 @@ class DizipalPlayer : ExtractorApi() {
             callback: (ExtractorLink) -> Unit
         ) {
             val response = app.get(url, referer = referer).text
-            val openPlayerRegex = """"file"\s*:\s*"(/edge/[^"]+)"""".toRegex()
+            val openPlayerRegex = """window\.openPlayer\s*\(\s*['"]([^'"]+)['"]""".toRegex()
             val playlistId = openPlayerRegex.find(response)?.groupValues?.get(1)
             Log.d("DiziPal", "--> playlistId: $playlistId")
             if (playlistId != null) {
                 val domainRegex = """https?://[^/]+""".toRegex()
                 val domain = domainRegex.find(url)?.value ?: "https://dplayer82.site"
-                val apiUrl = "$domain$playlistId"
+                val apiUrl = "$domain/source2.php?v=$playlistId"
                 Log.d("DiziPal", "--> apiUrl: $apiUrl")
                 val apiResponse = app.get(apiUrl, referer = url).text
 
                 try {
-                    val fileRegex = """"URI"\s*:\s*"([^"]+)"""".toRegex()
+                    val fileRegex = """"file"\s*:\s*"([^"]+)"""".toRegex()
                     val fileMatches = fileRegex.findAll(apiResponse)
 
                     fileMatches.forEach { matchResult ->
                         var fileUrl = matchResult.groupValues[1].replace("\\/", "/")
 
-                        if (fileUrl.startsWith("/")) {
-                            fileUrl = "https:$mainUrl$fileUrl"
+                        if (fileUrl.startsWith("//")) {
+                            fileUrl = "https:$fileUrl"
                         } else if (!fileUrl.startsWith("http")) {
-                            fileUrl = "https://$mainUrl$fileUrl"
+                            fileUrl = "https://$fileUrl"
                             Log.d("DiziPal", "--> fileUrl: $fileUrl")
                         }
 
-                        if (fileUrl.contains("variant.php")) {
-                            fileUrl = fileUrl.replace("variant.php", "master.m3u8")
+                        if (fileUrl.contains("m.php")) {
+                            fileUrl = fileUrl.replace("m.php", "master.m3u8")
                         }
 
                             callback.invoke(
