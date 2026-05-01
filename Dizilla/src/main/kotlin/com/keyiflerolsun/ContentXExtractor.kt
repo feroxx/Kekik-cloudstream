@@ -52,8 +52,12 @@ open class ContentX : ExtractorApi() {
     val vidSource = app.get("${mainUrl}/source2.php?v=${iExtract}", referer = extRef).text
     val vidExtract = Regex("""file":"([^"]+)""").find(vidSource)?.groups?.get(1)?.value ?: throw ErrorLoadingException("vidExtract is null")
     val m3uLink = vidExtract.replace("\\", "").let {
-        if (it.contains("hotlinger")) || it.contains("dplayer82.site")) it.replace("m.php", "master.m3u8") else it
+    if (it.contains("hotlinger") || it.contains("dplayer82.site")) {
+        it.replace("m.php", "master.m3u8")
+    } else {
+        it
     }
+}
 
     callback.invoke(
         newExtractorLink(
