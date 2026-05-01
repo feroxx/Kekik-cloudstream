@@ -23,7 +23,6 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import okhttp3.Interceptor
 import okhttp3.Response
 import org.jsoup.Jsoup
@@ -270,7 +269,12 @@ class DiziPal : MainAPI() {
             Log.d("DiziPal", "--> Extractor'a gönderilen Final URL: $iframeUrl")
             
             // Extractor'ı tetikle
-            loadExtractor(iframeUrl, data, subtitleCallback, callback)
+            DizipalPlayer().getUrl(
+                url = iframeUrl,
+                referer = data, // Videonun bulunduğu sayfa
+                subtitleCallback = subtitleCallback,
+                callback = callback
+            )
         } else {
             Log.e("DiziPal", "--> HATA: iframeUrl tamamen BOŞ. Video linki bulunamadı!")
         }
