@@ -51,7 +51,9 @@ open class ContentX : ExtractorApi() {
 
     val vidSource = app.get("${mainUrl}/source2.php?v=${iExtract}", referer = extRef).text
     val vidExtract = Regex("""file":"([^"]+)""").find(vidSource)?.groups?.get(1)?.value ?: throw ErrorLoadingException("vidExtract is null")
-    val m3uLink = vidExtract.replace("\\", "")
+    val m3uLink = vidExtract.replace("\\", "").let {
+        if (it.contains("hotlinger")) it.replace("m.php", "master.m3u8") else it
+    }
 
     callback.invoke(
         newExtractorLink(
@@ -70,7 +72,9 @@ open class ContentX : ExtractorApi() {
     if (iDublaj != null) {
         val dublajSource = app.get("${mainUrl}/source2.php?v=${iDublaj}", referer = extRef).text
         val dublajExtract = Regex("""file":"([^"]+)""").find(dublajSource)!!.groups[1]?.value ?: throw ErrorLoadingException("dublajExtract is null")
-        val dublajLink = dublajExtract.replace("\\", "")
+        val dublajLink = dublajExtract.replace("\\", "").let {
+            if (it.contains("hotlinger")) it.replace("m.php", "master.m3u8") else it
+        }
 
         callback.invoke(
             newExtractorLink(
