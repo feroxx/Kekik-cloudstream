@@ -392,23 +392,53 @@ class DiziPalOriginal : MainAPI() {
             headers = mapOf("User-Agent" to userAgent)
         ).text
 
+// 1. Regex'leri ve ilk eşleşmeyi koruyoruz
         val m3u8Match = Regex("""sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
-            ?: Regex("""file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
+            ?: Regex("""v\s*:\s*["']([^"']+\.html.*?)["']""").find(embedSource)
 
-        val m3u8Url = m3u8Match?.groupValues?.getOrNull(1)
+        val extractedUrl = m3u8Match?.groupValues?.getOrNull(1)
 
-        if (m3u8Url == null) {
-            Log.e("DZP", "Embed kaynağında M3U8 bulunamadı!")
+        if (extractedUrl == null) {
+            Log.e("DZP", "Embed kaynağında geçerli bir link bulunamadı!")
             return false
         }
 
-        Log.d("DZP", "Bulunan M3U8 » $m3u8Url")
+// 2. Dönüştürülmüş nihai URL'yi tutacak değişken
+        val finalM3u8Url = if (extractedUrl.contains(".html")) {
+            // URL'den sadece ID'yi (x6sctfgmyfws) güvenli bir şekilde ayıklıyoruz
+            // Örn: .../embed-x6sctfgmyfws.html -> x6sctfgmyfws
+            val idRegex = Regex("""embed-([^.]+)\.html""")
+            val idMatch = idRegex.find(extractedUrl)?.groupValues?.getOrNull(1)
+
+            if (idMatch != null) {
+                // İstenen formata göre string interpolation ile yeni URL'yi inşa ediyoruz
+                "https://s2.superadjacentsoddenly.xyz/hls2/01/00007/${idMatch}_,n,h,.urlset/master.m3u8"
+            } else {
+                Log.e("DZP", "HTML linkinden ID ayıklanamadı: $extractedUrl")
+                null
+            }
+        } else {
+            // Eğer ilk regex'ten doğrudan m3u8 geldiyse olduğu gibi kullanıyoruz
+            extractedUrl
+        }
+
+// 3. Son kontrol ve validation
+        if (finalM3u8Url == null) {
+            return false
+        }
+
+// Artık elimizde işlenmiş nihai m3u8 URL'si var
+        Log.d("DZP", "Başarıyla üretilen M3U8 URL: $finalM3u8Url")
+
+// Bundan sonraki stream ekleme veya return işlemlerini finalM3u8Url ile yapabilirsin.
+
+        Log.d("DZP", "Bulunan M3U8 » $finalM3u8Url")
 
         callback.invoke(
             newExtractorLink(
                 source = this.name,
                 name = "Dizipal (Ana Sunucu)",
-                url = m3u8Url,
+                url = finalM3u8Url,
                 type = ExtractorLinkType.M3U8
             ) {
                 referer = embedUrl
