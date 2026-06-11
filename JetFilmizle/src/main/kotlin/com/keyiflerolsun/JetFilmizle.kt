@@ -16,7 +16,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class JetFilmizle : MainAPI() {
-    override var mainUrl              = "https://jetfilmizle.net"
+    override var mainUrl              = "https://jetfilmizle.now"
     override var name                 = "JetFilmizle"
     override val hasMainPage          = true
     override var lang                 = "tr"
@@ -61,7 +61,7 @@ class JetFilmizle : MainAPI() {
         )
 
         // 4. Senior Dokunuşu: İçerik film mi dizi mi? URL yapısından dinamik olarak tespit ediyoruz.
-        // Örnek: https://jetfilmizle.net/dizi/ejderhalar-prensi
+        // Örnek: https://jetfilmizle.now/dizi/ejderhalar-prensi
         val isTvSeries = href.contains("/dizi/", ignoreCase = true)
         val tvType = if (isTvSeries) TvType.TvSeries else TvType.Movie
 
