@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 
 open class PlayerKorea : ExtractorApi() {
     override val name            = "PlayerKorea"
-    override val mainUrl         = "https://playerkorea10.xyz"
+    override val mainUrl         = "https://playerdkorea.xyz"
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
