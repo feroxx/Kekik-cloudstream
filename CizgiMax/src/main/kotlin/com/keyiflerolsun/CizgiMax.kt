@@ -16,18 +16,17 @@ class CizgiMax : MainAPI() {
     override val supportedTypes       = setOf(TvType.Cartoon)
 
     override val mainPage = mainPageOf(
-        "?orderby=date&order=DESC"                                   to "Son Eklenenler",
-        "?s_type&tur[0]=aile&orderby=date&order=DESC"                to "Aile",
-        "?s_type&tur[0]=aksiyon-macera&orderby=date&order=DESC"      to "Aksyion",
-        "?s_type&tur[0]=animasyon&orderby=date&order=DESC"           to "Animasyon",
-        "?s_type&tur[0]=bilim-kurgu-fantazi&orderby=date&order=DESC" to "Bilim Kurgu",
-        "?s_type&tur[0]=cocuklar&orderby=date&order=DESC"            to "Çocuklar",
-        "?s_type&tur[0]=komedi&orderby=date&order=DESC"              to "Komedi",
+        "/yeni-eklenenler/"    to "Son Eklenenler",
+        "/tur/aile/"           to "Aile",
+        "tur/aksiyon/"         to "Aksyion",
+        "/tur/bilim-kurgu/"    to "Bilim Kurgu",
+        "/tur/cocuk/"          to "Çocuklar",
+        "/tur/komedi/"         to "Komedi",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${mainUrl}/diziler/page/${page}${request.data}").document
-        val home     = document.select("ul.filter-results li").mapNotNull { it.toSearchResult() }
+        val document = app.get("${mainUrl}/?page=${page}").document
+        val home     = document.select("film-list").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
@@ -41,7 +40,7 @@ class CizgiMax : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.get("${mainUrl}/ajaxservice/index.php?qr=${query}").parsedSafe<SearchResult>()?.data?.result ?: return listOf()
+        val response = app.get("${mainUrl}/api/search/suggest/?q${query}").parsedSafe<SearchResult>()?.data?.result ?: return listOf()
 
         return response.mapNotNull { result ->
             if (result.sName.contains(".Bölüm") || result.sName.contains(".Sezon") || result.sName.contains("-Sezon") || result.sName.contains("-izle")) {
