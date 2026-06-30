@@ -93,6 +93,7 @@ subprojects {
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.18")
         implementation("org.jsoup:jsoup:1.22.2")
+        implementation("org.jspecify:jspecify:1.0.0")
         implementation("androidx.annotation:annotation:1.10.0")
         // Do not bump above 2.13.1
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
