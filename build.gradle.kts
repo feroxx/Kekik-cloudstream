@@ -1,5 +1,7 @@
 import com.android.build.api.dsl.LibraryExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.kotlin.dsl.register
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
@@ -11,17 +13,9 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:9.1.0")
+        classpath("com.android.tools.build:gradle:9.1.1")
         classpath("com.github.recloudstream.gradle:gradle:81b1d424d")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.20")
-    }
-}
-
-subprojects {
-    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        compilerOptions {
-            freeCompilerArgs.add("-Xannotation-default-target=param-property")
-        }
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
     }
 }
 
@@ -71,43 +65,45 @@ subprojects {
         lint {
             targetSdk = 36
         }
+
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_1_8
-            targetCompatibility = JavaVersion.VERSION_1_8
+            sourceCompatibility = JavaVersion.VERSION_17
+            targetCompatibility = JavaVersion.VERSION_17
         }
 
         //noinspection WrongGradleMethod
         tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_1_8)
+                jvmTarget.set(JvmTarget.JVM_17)
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
                     "-Xno-receiver-assertions",
-                    "-Xannotation-default-target=param-property"
                 )
             }
         }
     }
 
-
     dependencies {
-        val cloudstream by configurations
         val implementation by configurations
-
-        // Stubs for all Cloudstream classes
+        val cloudstream by configurations
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        // these dependencies can include any of those which are added by the app,
-        // but you dont need to include any of them if you dont need them
-        // https://github.com/recloudstream/cloudstream/blob/master/app/build.gradle
-        implementation(kotlin("stdlib"))                                              // Kotlin'in temel kütüphanesi
-        implementation("com.github.Blatzar:NiceHttp:0.4.17")                          // HTTP kütüphanesi
-        implementation("org.jsoup:jsoup:1.22.2")                                      // HTML ayrıştırıcı
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.21.2")   // Kotlin için Jackson JSON kütüphanesi
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.21.2")          // JSON-nesne dönüştürme kütüphanesi
-        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")      // Kotlin için asenkron işlemler
-        implementation("com.github.vidstige:jadb:v1.2.1")
+        // Other dependencies
+        implementation(kotlin("stdlib"))
+        implementation("com.github.Blatzar:NiceHttp:0.4.18")
+        implementation("org.jsoup:jsoup:1.22.2")
+        implementation("androidx.annotation:annotation:1.10.0")
+        // Do not bump above 2.13.1
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.13.1")
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+        // Do not bump above 1.8.1
+        implementation("org.mozilla:rhino:1.8.1")
+        implementation("me.xdrop:fuzzywuzzy:1.4.0")
+        implementation("com.google.code.gson:gson:2.14.0")
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+        implementation("org.bouncycastle:bcpkix-jdk18on:1.84")
     }
 }
 
