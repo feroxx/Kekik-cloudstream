@@ -26,21 +26,21 @@ class CizgiMax : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${mainUrl}/?page=${page}").document
-        val home     = document.select("film-list").mapNotNull { it.toSearchResult() }
+        val home     = document.select(".film-list .film-item").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("h2.truncate")?.text()?.trim() ?: return null
-        val href      = fixUrlNull(this.selectFirst("div.poster-subject a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.poster-media img")?.attr("data-src"))
+        val title     = this.selectFirst(".data-anime-name")?.text()?.trim() ?: return null
+        val href      = fixUrlNull(this.selectFirst("div.inner a")?.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("div.inner img")?.attr("data-src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.Cartoon) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.get("${mainUrl}/api/search/suggest/?q${query}").parsedSafe<SearchResult>()?.data?.result ?: return listOf()
+        val response = app.get("${mainUrl}/api/search/suggest/?q=${query}").parsedSafe<SearchResult>()?.data?.result ?: return listOf()
 
         return response.mapNotNull { result ->
             if (result.sName.contains(".Bölüm") || result.sName.contains(".Sezon") || result.sName.contains("-Sezon") || result.sName.contains("-izle")) {
@@ -63,9 +63,9 @@ class CizgiMax : MainAPI() {
         val document = app.get(url).document
 
         val title       = document.selectFirst("h1.page-title")?.text() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("img.series-profile-thumb")?.attr("src")) ?: return null
-        val description = document.selectFirst("p#tv-series-desc")?.text()?.trim()
-        val tags        = document.select("div.genre-item a").mapNotNull { it.text().trim() }
+        val poster      = fixUrlNull(document.selectFirst("div.anime-poster img")?.attr("src")) ?: return null
+        val description = document.selectFirst("p#anime-desc")?.text()?.trim()
+        val tags        = document.select("li.meta-genres").mapNotNull { it.text().trim() }
 
 
         val episodes = document.select("div.asisotope div.ajax_post").mapNotNull {

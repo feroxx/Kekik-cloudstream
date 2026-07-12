@@ -44,8 +44,8 @@ class DiziKorea : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/tum-kore-dizileri/"   to "Kore Dizileri",
-        "${mainUrl}/kore-filmleri-izle1/" to "Kore Filmleri",
+        "${mainUrl}/kore-dizileri-izle-dq/"   to "Kore Dizileri",
+        "${mainUrl}/kore-filmleri-izle-dq/" to "Kore Filmleri",
         "${mainUrl}/tayland-dizileri/"    to "Tayland Dizileri",
         "${mainUrl}/tayland-filmleri/"    to "Tayland Filmleri",
         "${mainUrl}/cin-dizileri/"        to "Çin Dizileri",
@@ -55,15 +55,15 @@ class DiziKorea : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}${page}", interceptor = interceptor).document
         Log.d("DZK", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
-        val home     = document.select("div.poster-long").mapNotNull { it.toSearchResult() }
+        val home     = document.select("div.content-grid").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("h2")?.text()?.trim() ?: return null
+        val title     = this.selectFirst("div.poster-card-meta")?.text()?.trim() ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.poster-long-image img.lazy")?.attr("data-src"))
+        val posterUrl = fixUrlNull(this.selectFirst("div.poster-card-image img")?.attr("src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) { this.posterUrl = posterUrl }
     }
@@ -103,8 +103,8 @@ class DiziKorea : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, interceptor = interceptor).document
 
-        val title       = document.selectFirst("h1 a")?.text()?.trim() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("meta[property=og:image]")?.attr("content")) ?: return null
+        val title       = document.selectFirst("h1 series-title")?.text()?.trim() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster")?.attr("img src")) ?: return null
         val year        = document.selectFirst("h1 span")?.text()?.substringAfter("(")?.substringBefore(")")?.toIntOrNull()
         val description = document.selectFirst("div.series-profile-summary p")?.text()?.trim()
         val tags        = document.select("div.series-profile-type a").mapNotNull { it.text().trim() }
