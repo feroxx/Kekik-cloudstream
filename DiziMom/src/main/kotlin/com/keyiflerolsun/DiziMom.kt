@@ -47,8 +47,8 @@ class DiziMom : MainAPI() {
         "${mainUrl}/yerli-dizi-izle/page/"     to "Yerli Diziler",
         "${mainUrl}/yabanci-dizi-izle/page/"   to "Yabancı Diziler",
         "${mainUrl}/tv-programlari-izle/page/" to "TV Programları",
+        "${mainUrl}/netflix-dizileri-izle/page/"      to "Netflix Dizileri",
         // "${mainUrl}/turkce-dublaj-diziler/page/"      to "Dublajlı Diziler",   // ! "Son Bölümler" Ana sayfa yüklenmesini yavaşlattığı için bunlar devre dışı bırakılmıştır..
-        // "${mainUrl}/netflix-dizileri-izle/page/"      to "Netflix Dizileri",
         // "${mainUrl}/kore-dizileri-izle/page/"         to "Kore Dizileri",
         // "${mainUrl}/full-hd-hint-dizileri-izle/page/" to "Hint Dizileri",
     )
@@ -72,7 +72,7 @@ class DiziMom : MainAPI() {
         val epDoc    = app.get(epHref).document
         val href     = epDoc.selectFirst("div#benzerli a")?.attr("href") ?: return null
 
-        val posterUrl = fixUrlNull(this.selectFirst("a img")?.attr("src"))
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
