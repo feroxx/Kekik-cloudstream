@@ -55,7 +55,7 @@ class DiziKorea : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}${page}", interceptor = interceptor).document
         Log.d("DZK", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
-        val home     = document.select("div.content-grid").mapNotNull { it.toSearchResult() }
+        val home     = document.select("div.listing-section div.content-grid").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
@@ -105,24 +105,15 @@ class DiziKorea : MainAPI() {
 
         val title       = document.selectFirst("h1 series-title")?.text()?.trim() ?: return null
         val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster")?.attr("img src")) ?: return null
-        val year        = document.selectFirst("h1 span")?.text()?.substringAfter("(")?.substringBefore(")")?.toIntOrNull()
-        val description = document.selectFirst("div.series-profile-summary p")?.text()?.trim()
-        val tags        = document.select("div.series-profile-type a").mapNotNull { it.text().trim() }
-        val duration    = document.selectXpath("//span[text()='Süre']//following-sibling::p").text().trim().split(" ").first().toIntOrNull()
-        val trailerId     = document.selectFirst("div.series-profile-trailer")?.attr("data-yt")
-        val trailerUrl = trailerId?.takeIf { it.isNotEmpty() }?.let { "https://www.youtube.com/watch?v=$it" }
-        val actors      = document.select("div.series-profile-cast li").map {
-            Actor(it.selectFirst("h5")!!.text(), it.selectFirst("img")!!.attr("data-src"))
-        }
 
         if (url.contains("/dizi/")) {
             val episodes    = mutableListOf<Episode>()
-            document.select("div.series-profile-episode-list").forEach {
+            document.select("div.episode-list").forEach {
                 val epSeason = it.parent()!!.id().split("-").last().toIntOrNull()
 
                 it.select("li").forEach ep@ { episodeElement ->
-                    val epHref    = fixUrlNull(episodeElement.selectFirst("h6 a")?.attr("href")) ?: return@ep
-                    val epEpisode = episodeElement.selectFirst("a.truncate data")?.text()?.trim()?.toIntOrNull()
+                    val epHref    = fixUrlNull(episodeElement.selectFirst("h2 a")?.attr("href")) ?: return@ep
+                    val epEpisode = episodeElement.selectFirst("span ep-title")?.text()?.trim()?.toIntOrNull()
 
                     episodes.add(newEpisode(epHref) {
                         this.name = "${epSeason}. Sezon ${epEpisode}. Bölüm"
@@ -134,22 +125,10 @@ class DiziKorea : MainAPI() {
 
             return newTvSeriesLoadResponse(title, url, TvType.AsianDrama, episodes) {
                 this.posterUrl = poster
-                this.year      = year
-                this.plot      = description
-                this.tags      = tags
-                this.duration  = duration
-                addActors(actors)
-                addTrailer(trailerUrl)
             }
         } else {
             return newMovieLoadResponse(title, url, TvType.AsianDrama, url) {
                 this.posterUrl = poster
-                this.year      = year
-                this.plot      = description
-                this.tags      = tags
-                this.duration  = duration
-                addActors(actors)
-                addTrailer(trailerUrl)
             }
         }
     }
