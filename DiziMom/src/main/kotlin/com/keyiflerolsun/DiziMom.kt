@@ -72,7 +72,7 @@ class DiziMom : MainAPI() {
         val epDoc    = app.get(epHref).document
         val href     = epDoc.selectFirst("div#benzerli a")?.attr("href") ?: return null
 
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
+        val posterUrl = fixUrlNull(this.selectFirst("a img")?.attr("data-src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
