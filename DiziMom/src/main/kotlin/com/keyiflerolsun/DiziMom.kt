@@ -80,7 +80,7 @@ class DiziMom : MainAPI() {
     private fun Element.diziler(): SearchResponse? {
         val title     = this.selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
         val href      = fixUrlNull(this.selectFirst("div.cat-img a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.cat-img img")?.attr("src"))
+        val posterUrl = fixUrlNull(this.selectFirst("div.cat-img img")?.attr("data-src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
