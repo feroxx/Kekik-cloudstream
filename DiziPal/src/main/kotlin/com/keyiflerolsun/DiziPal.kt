@@ -102,17 +102,74 @@ class DiziPal : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(
-            request.data, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
-        ).document
-        //Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
-        val home     = if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
-            document.select("div.new-added-list div.bg-\\[\\#22232a\\]").mapNotNull { it.sonBolumler() }
+        // Normal sayfalar için sayfa URL'sini ayarla (yabancı-dizi-izle?sayfa=2 gibi)
+        val url = if (page > 1 && !request.data.contains("/kanal/")) {
+            if (request.data.contains("?")) "${request.data}&sayfa=$page" else "${request.data}?sayfa=$page"
         } else {
-            document.select("div.bg-\\[\\#22232a\\]").mapNotNull { it.diziler() }
+            request.data
         }
 
-        return newHomePageResponse(request.name, home, hasNext=true)
+        val document = app.get(
+            url, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
+        ).document
+
+        val home = mutableListOf<SearchResponse>()
+
+        // 1. İlk sayfada isek HTML içindeki mevcut dizileri al
+        if (page == 1) {
+            if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
+                home.addAll(document.select("div.new-added-list div.bg-\\[\\#22232a\\]").mapNotNull { it.sonBolumler() })
+            } else {
+                home.addAll(document.select("div.bg-\\[\\#22232a\\]").mapNotNull { it.diziler() })
+            }
+        }
+
+        // 2. Eğer bir kanal sayfasındaysak, senin verdiğin parametrelerle API'den verileri çek
+        if (request.data.contains("/kanal/")) {
+            // HTML içinden channelId'yi dinamik olarak çekmeye çalışalım (bulamazsak boş göndeririz)
+            val channelIdFromDoc = Regex("""channelId\s*[:=]\s*(\d+)""").find(document.html())?.groupValues?.get(1)
+            val channelSlug = request.data.substringAfterLast("/")
+
+            try {
+                val apiResponse = app.post(
+                    "${mainUrl}/bg/getserielistbychannel",
+                    headers = mapOf(
+                        "Accept" to "application/json, text/javascript, */*; q=0.01",
+                        "X-Requested-With" to "XMLHttpRequest"
+                    ),
+                    referer = request.data,
+                    data = mapOf(
+                        "cKey"       to "c61f91c5141d178450934fe81c0a2029",
+                        "cValue"     to "MTc4NDQwNzIwMDhkMzJhNTc1YzUwOGU1ZjQwMjdjMjIyOWVjOGVhMTcwNGQyM2FjODM2YTI4YTU0NjUyMjI2ZmVjMzFkYzBkMWQyMWY4YzdiNA==",
+                        "curPage"    to page.toString(),
+                        "channelId"  to (channelIdFromDoc ?: "1"), // capture ettiğin veri 1 olduğu için default 1
+                        "languageId" to "2,3,4",
+                        "slug"       to channelSlug // Bazı durumlarda slug da gerekebilir
+                    )
+                )
+
+                val mapper = jacksonObjectMapper()
+                val rootNode = mapper.readTree(apiResponse.text)
+                val resultArrayNode = rootNode.at("/data/result")
+
+                if (resultArrayNode.isArray) {
+                    val apiItems: List<SearchItem> = mapper.readValue(resultArrayNode.traverse())
+                    val apiResults = apiItems.map { it.toPostSearchResult() }
+
+                    // HTML'de zaten olanları ekleme (tekilleştirme)
+                    apiResults.forEach { res ->
+                        if (home.none { it.url == res.url }) {
+                            home.add(res)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("DiziPal", "API Hatası: ${e.message}")
+            }
+        }
+
+        // Eğer sonuç geldiyse bir sonraki sayfa vardır diyelim
+        return newHomePageResponse(request.name, home, hasNext = home.isNotEmpty())
     }
 
     private fun Element.sonBolumler(): SearchResponse? {
@@ -158,8 +215,8 @@ class DiziPal : MainAPI() {
         ),
         referer = "${mainUrl}/",
         data = mapOf(
-            "cKey" to "ca1d4a53d0f4761a949b85e51e18f096",
-            "cValue" to "MTc3NTI1MTgwMDg3ODNkODBiMDM2MTk1YTkxMWU5ZTYyYjE4NzQyMjJlMzMwNjAxNGVjMWQzMzliNzY5NzFlZmViMzRhMGVmNjgwODU3MGIyZA==",
+            "cKey" to "c61f91c5141d178450934fe81c0a2029",
+            "cValue" to "MTc4NDQwNzIwMDhkMzJhNTc1YzUwOGU1ZjQwMjdjMjIyOWVjOGVhMTcwNGQyM2FjODM2YTI4YTU0NjUyMjI2ZmVjMzFkYzBkMWQyMWY4YzdiNA==",
             "type" to "hepsi", 
             "searchterm" to query
         )
