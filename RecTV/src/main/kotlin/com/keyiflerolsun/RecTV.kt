@@ -38,20 +38,6 @@ class RecTV : MainAPI() {
             }
         } catch (_: Exception) {}
 
-        Log.d(name, "Scanning for active prectv domain...")
-        for (i in 50..120) {
-            val probeUrl = "https://a.prectv$i.lol"
-            try {
-                val response = app.get("$probeUrl/api/attest/nonce", headers = mapOf(
-                    "User-Agent" to "googleusercontent"
-                ), timeout = 2000)
-                if (response.code == 200 && response.text.contains("nonce")) {
-                    Log.d(name, "Found active prectv domain: $probeUrl")
-                    activeMainUrl = probeUrl
-                    return probeUrl
-                }
-            } catch (_: Exception) {}
-        }
         return activeMainUrl
     }
     
