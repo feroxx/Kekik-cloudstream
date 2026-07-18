@@ -115,8 +115,8 @@ class DiziPal : MainAPI() {
 
         val home = mutableListOf<SearchResponse>()
 
-        // 1. İlk sayfada isek HTML içindeki mevcut dizileri al
-        if (page == 1) {
+        // 1. HTML içindeki mevcut dizileri al
+        if (!request.data.contains("/kanal/") || page == 1) {
             if (request.data.contains("/yabanci-dizi-izle") || request.data.contains("/hd-film-izle")) {
                 home.addAll(document.select("div.new-added-list div.bg-\\[\\#22232a\\]").mapNotNull { it.sonBolumler() })
             } else {
@@ -150,11 +150,12 @@ class DiziPal : MainAPI() {
 
                 val mapper = jacksonObjectMapper()
                 val rootNode = mapper.readTree(apiResponse.text)
-                val resultArrayNode = rootNode.at("/data/result")
-
-                if (resultArrayNode.isArray) {
-                    val apiItems: List<SearchItem> = mapper.readValue(resultArrayNode.traverse())
-                    val apiResults = apiItems.map { it.toPostSearchResult() }
+                
+                val htmlNode = rootNode.at("/data/html")
+                if (!htmlNode.isMissingNode) {
+                    val htmlContent = htmlNode.asText()
+                    val parsedDoc = Jsoup.parse(htmlContent)
+                    val apiResults = parsedDoc.select("div.bg-\\[\\#22232a\\]").mapNotNull { it.diziler() }
 
                     // HTML'de zaten olanları ekleme (tekilleştirme)
                     apiResults.forEach { res ->
