@@ -4,104 +4,89 @@ package com.keyiflerolsun
 
 import android.util.Log
 import org.jsoup.nodes.Element
-import org.jsoup.Jsoup
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import org.jsoup.Jsoup
 
 class CizgiMax : MainAPI() {
     override var mainUrl              = "https://cizgimax.online"
-    override var name                 = "CizgiMax"
+    override var name                 = "ÇizgiMax"
     override val hasMainPage          = true
     override var lang                 = "tr"
-    override val hasQuickSearch       = true
-    override val supportedTypes       = setOf(TvType.Cartoon, TvType.Movie)
+    override val hasQuickSearch       = false
+    override val supportedTypes       = setOf(TvType.Cartoon, TvType.Anime, TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "/yeni-eklenenler/"    to "Son Eklenenler",
-        "/tur/aile/"           to "Aile",
-        "/tur/aksiyon/"         to "Aksiyon",
-        "/tur/bilim-kurgu/"    to "Bilim Kurgu",
-        "/tur/cocuk/"          to "Çocuklar",
-        "/tur/komedi/"         to "Komedi",
+        "${mainUrl}/diziler/page/"       to "Diziler",
+        "${mainUrl}/tur/turkce-dublaj/page/" to "Türkçe Dublaj",
+        "${mainUrl}/tur/turkce-altyazi/page/" to "Türkçe Altyazılı",
+        "${mainUrl}/tur/cartoon/page/"   to "Çizgi Filmler",
+        "${mainUrl}/tur/anime/page/"     to "Animeler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val cleanData = request.data.removePrefix("/").removeSuffix("/")
-        val url = if (cleanData.isEmpty()) {
-            "${mainUrl}/?page=${page}"
+        val requestUrl = if (request.data.contains("/page/")) {
+            request.data.replace("/page/", "/page/$page/")
         } else {
-            "${mainUrl}/${cleanData}/?page=${page}"
+            "${request.data}$page/"
         }
-        val document = app.get(url).document
-        val home     = document.select(".film-list .film-item").mapNotNull { it.toSearchResult() }
+
+        val document = app.get(requestUrl).document
+        val home     = document.select("div.films-list div.flw-item").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("a.film-name")?.text()?.trim()
-            ?: this.attr("data-anime-name").takeIf { it.isNotBlank() }
+        val title     = this.selectFirst("a.film-name")?.text()?.trim() 
+            ?: this.selectFirst("img.film-poster-img")?.attr("alt")?.trim()
             ?: return null
-        val href      = fixUrlNull(this.selectFirst("a.film-name")?.attr("href") ?: this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src") ?: this.selectFirst("img")?.attr("data-src"))
+        var href      = fixUrlNull(this.selectFirst("a.film-name")?.attr("href") 
+            ?: this.selectFirst("a.film-poster-ahref")?.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("img.film-poster-img")?.attr("data-src") 
+            ?: this.selectFirst("img.film-poster-img")?.attr("src"))
 
         val isMovie = href.contains("/film/")
+        val type = if (isMovie) TvType.Movie else TvType.Cartoon
+
         return if (isMovie) {
-            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+            newMovieSearchResponse(title, href, type) { this.posterUrl = posterUrl }
         } else {
-            newTvSeriesSearchResponse(title, href, TvType.Cartoon) { this.posterUrl = posterUrl }
+            newTvSeriesSearchResponse(title, href, type) { this.posterUrl = posterUrl }
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.get("${mainUrl}/api/search/suggest/?q=${query}").parsedSafe<SearchResult>()?.animes ?: return listOf()
-
-        return response.mapNotNull { result ->
-            val isMovie = result.url.contains("/film/")
-            if (isMovie) {
-                newMovieSearchResponse(
-                    result.name,
-                    fixUrl(result.url),
-                    TvType.Movie
-                ) {
-                    this.posterUrl = fixUrlNull(result.poster)
-                }
-            } else {
-                newTvSeriesSearchResponse(
-                    result.name,
-                    fixUrl(result.url),
-                    TvType.Cartoon
-                ) {
-                    this.posterUrl = fixUrlNull(result.poster)
-                }
-            }
-        }
+        val document = app.get("${mainUrl}/arama/?q=${query}").document
+        return document.select("div.films-list div.flw-item").mapNotNull { it.toSearchResult() }
     }
-
-    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title       = document.selectFirst("h1 a.anime-title-link")?.text()
-            ?: document.selectFirst("h1.page-title")?.text()
-            ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.anime-poster img")?.attr("src") ?: document.selectFirst("div.anime-poster img")?.attr("data-src")) ?: return null
-        val description = document.selectFirst("p#anime-desc")?.text()?.trim()
-        val tags        = document.select("li.meta-genres a").map { it.text().trim() }.filter { it.isNotEmpty() }
+        val title       = document.selectFirst("h2.heading-name")?.text()?.trim() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("img.film-poster-img")?.attr("src") ?: document.selectFirst("img.film-poster-img")?.attr("data-src"))
+        val description = document.selectFirst("div.description")?.text()?.trim()
+        val tags        = document.select("div.elements div.row-line").find { it.text().contains("Tür:") }?.select("a")?.map { it.text().trim() } ?: emptyList()
 
-        val episodes = document.select("div.ep-grid-numbers").flatMap { pane ->
-            val season = pane.attr("data-season-pane").toIntOrNull() ?: 1
-            pane.select("a.ep-num-btn").mapNotNull { a ->
-                val epHref = fixUrlNull(a.attr("href")) ?: return@mapNotNull null
-                val epName = a.attr("title").trim()
-                val epEpisode = a.selectFirst("span.ep-num-label")?.text()?.trim()?.toIntOrNull()
+        val episodes = mutableListOf<Episode>()
 
-                newEpisode(epHref) {
-                    this.name = epName
-                    this.season = season
-                    this.episode = epEpisode
-                }
+        document.select("div.ep-grid-numbers").forEach { pane ->
+            val seasonName = pane.attr("data-season-pane")
+            val season = Regex("""\d+""").find(seasonName)?.value?.toIntOrNull() ?: 1
+
+            pane.select("a.ep-num-btn").forEach { element ->
+                val epHref = fixUrlNull(element.attr("href")) ?: return@forEach
+                val epName = element.attr("title")?.trim() ?: "Bölüm"
+                val epEpisode = Regex("""\d+""").find(element.text())?.value?.toIntOrNull() ?: 1
+
+                episodes.add(
+                    newEpisode(epHref) {
+                        this.name = epName
+                        this.season = season
+                        this.episode = epEpisode
+                    }
+                )
             }
         }
 
@@ -124,18 +109,45 @@ class CizgiMax : MainAPI() {
         Log.d("CZGM", "data » $data")
         val document = app.get(data).document
 
-        // Extract base64 servers array
         val script = document.select("script").find { it.data().contains("var servers") }?.data() ?: return false
-        val serversMatch = Regex("""var servers\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\)\s*;?""").find(script) ?: return false
-        val serversB64 = serversMatch.groupValues[2]
-        var paddedB64 = serversB64
-        while (paddedB64.length % 4 != 0) {
-            paddedB64 += "="
-        }
-        val decodedJson = String(android.util.Base64.decode(paddedB64, android.util.Base64.DEFAULT), Charsets.UTF_8)
-        val servers = AppUtils.tryParseJson<List<ServerItem>>(decodedJson) ?: return false
+        
+        val serversList = mutableListOf<ServerItem>()
 
-        servers.forEach { server ->
+        // 1. Parse 'servers' array
+        val serversMatch = Regex("""servers\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\)""").find(script)
+        if (serversMatch != null) {
+            val serversB64 = serversMatch.groupValues[2]
+            var paddedB64 = serversB64
+            while (paddedB64.length % 4 != 0) paddedB64 += "="
+            try {
+                val decodedJson = String(android.util.Base64.decode(paddedB64, android.util.Base64.DEFAULT), Charsets.UTF_8)
+                val parsed = AppUtils.tryParseJson<List<ServerItem>>(decodedJson)
+                if (parsed != null) serversList.addAll(parsed)
+            } catch (e: Exception) {
+                Log.e("CZGM", "Error parsing servers: ${e.message}")
+            }
+        }
+
+        // 2. Parse 'serversByLang' map
+        val serversByLangMatch = Regex("""serversByLang\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\)""").find(script)
+        if (serversByLangMatch != null) {
+            val serversByLangB64 = serversByLangMatch.groupValues[2]
+            var paddedB64 = serversByLangB64
+            while (paddedB64.length % 4 != 0) paddedB64 += "="
+            try {
+                val decodedJson = String(android.util.Base64.decode(paddedB64, android.util.Base64.DEFAULT), Charsets.UTF_8)
+                val parsedMap = AppUtils.tryParseJson<Map<String, List<ServerItem>>>(decodedJson)
+                parsedMap?.values?.forEach { list ->
+                    serversList.addAll(list)
+                }
+            } catch (e: Exception) {
+                Log.e("CZGM", "Error parsing serversByLang: ${e.message}")
+            }
+        }
+
+        val uniqueServers = serversList.distinctBy { it.streamUrl ?: it.resolveUrl ?: it.src ?: "" }
+
+        uniqueServers.forEach { server ->
             if (!server.resolveUrl.isNullOrEmpty()) {
                 try {
                     val resolveUrl = if (server.resolveUrl.startsWith("http")) server.resolveUrl else "${mainUrl}${server.resolveUrl}"
@@ -160,6 +172,23 @@ class CizgiMax : MainAPI() {
                 } catch (e: Exception) {
                     Log.e("CZGM", "Resolve error: ${e.message}")
                 }
+            } else if (!server.streamUrl.isNullOrEmpty()) {
+                val streamUrl = if (server.streamUrl.startsWith("http")) server.streamUrl else "${mainUrl}${server.streamUrl}"
+                var label = server.label ?: "ÇizgiMax"
+                if (server.type != null) {
+                    label = "$label (${server.type})"
+                }
+                callback.invoke(
+                    newExtractorLink(
+                        source = label,
+                        name = label,
+                        url = streamUrl,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        quality = Qualities.Unknown.value
+                        headers = mapOf("Referer" to "$mainUrl/")
+                    }
+                )
             } else if (!server.src.isNullOrEmpty()) {
                 val iframeSrc = server.src
                 loadExtractor(iframeSrc, "$mainUrl/", subtitleCallback, callback)
@@ -178,4 +207,26 @@ class CizgiMax : MainAPI() {
             else -> Qualities.Unknown.value
         }
     }
+
+    data class ServerItem(
+        val type: String?,
+        val label: String?,
+        val resolveUrl: String?,
+        val streamUrl: String?,
+        val src: String?,
+        val embedId: Any?
+    )
+
+    data class ResolveResponse(
+        val id: String?
+    )
+
+    data class TauResponse(
+        val urls: List<TauUrl>?
+    )
+
+    data class TauUrl(
+        val label: String?,
+        val url: String
+    )
 }

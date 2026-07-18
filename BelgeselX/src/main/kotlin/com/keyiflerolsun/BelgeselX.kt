@@ -229,6 +229,12 @@ class BelgeselX : MainAPI() {
                 // Parse video files and labels inside sources object array
                 Regex("""\{\s*["']?file["']?\s*:\s*["']([^"']+)["'](?:.*?["']?label["']?\s*:\s*["']([^"']+)["'])?""").findAll(alternatifResp).forEach {
                     val videoUrl = it.groupValues[1]
+
+                    // Filter out empty/incomplete URLs
+                    if (videoUrl.endsWith("cid=") || videoUrl.endsWith("googleusercontent.com/") || videoUrl.isBlank()) {
+                        return@forEach
+                    }
+
                     var qualityStr = it.groupValues[2].ifEmpty { "720p" }
                     var sourceName = this.name
 
@@ -237,13 +243,27 @@ class BelgeselX : MainAPI() {
                         sourceName = "Google"
                     }
 
-                    val linkType = if (videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    // Follow redirects for php stream URLs to get the final playable video URL
+                    var finalVideoUrl = videoUrl
+                    if (videoUrl.contains("belgeselx.php") || videoUrl.contains("belgeselx2.php") || videoUrl.contains("belgeselx3.php")) {
+                        try {
+                            val redirectRes = app.get(videoUrl, referer = refererUrl, allowRedirects = true)
+                            if (redirectRes.code == 200 && redirectRes.url.isNotEmpty() && !redirectRes.url.contains("belgeselx")) {
+                                finalVideoUrl = redirectRes.url
+                                Log.d("BLX", "Resolved redirect: $videoUrl -> $finalVideoUrl")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("BLX", "Failed to resolve redirect: ${e.message}")
+                        }
+                    }
+
+                    val linkType = if (finalVideoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
 
                     callback.invoke(
                         newExtractorLink(
                             source = sourceName,
                             name = sourceName,
-                            url = videoUrl,
+                            url = finalVideoUrl,
                             type = linkType
                         ) {
                             this.referer = refererUrl
