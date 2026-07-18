@@ -39,7 +39,7 @@ class RecTV : MainAPI() {
         } catch (_: Exception) {}
 
         Log.d(name, "Scanning for active prectv domain...")
-        for (i in 70..120) {
+        for (i in 50..120) {
             val probeUrl = "https://a.prectv$i.lol"
             try {
                 val response = app.get("$probeUrl/api/attest/nonce", headers = mapOf(
