@@ -80,7 +80,11 @@ class DiziMom : MainAPI() {
     private fun Element.diziler(): SearchResponse? {
         val title     = this.selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
         val href      = fixUrlNull(this.selectFirst("div.cat-img a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.cat-img img")?.attr("data-src"))
+        val posterUrl = fixUrlNull(
+            this.selectFirst("div.cat-img img")?.let { element ->
+                element.attr("data-src").takeIf { it.isNotBlank() } ?: element.attr("src")
+            }
+        )
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
@@ -97,7 +101,7 @@ class DiziMom : MainAPI() {
         val document = app.get(url, interceptor = interceptor).document
 
         val title       = document.selectFirst("div.title h1")?.text()?.substringBefore(" izle") ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.cat-img img")?.attr("src")) ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.category_image img")?.attr("src")) ?: return null
         val year        = document.selectXpath("//div[span[contains(text(), 'Yapım Yılı')]]").text().substringAfter("Yapım Yılı : ").trim().toIntOrNull()
         val description = document.selectFirst("div.category_desc")?.text()?.trim()
         val tags        = document.select("div.genres a").mapNotNull { it.text().trim() }
