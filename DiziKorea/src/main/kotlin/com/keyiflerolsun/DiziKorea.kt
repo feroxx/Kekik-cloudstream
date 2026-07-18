@@ -44,16 +44,16 @@ class DiziKorea : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/kore-dizileri-izle-dq/"   to "Kore Dizileri",
-        "${mainUrl}/kore-filmleri-izle-dq/" to "Kore Filmleri",
-        "${mainUrl}/tayland-dizileri/"    to "Tayland Dizileri",
-        "${mainUrl}/tayland-filmleri/"    to "Tayland Filmleri",
-        "${mainUrl}/cin-dizileri/"        to "Çin Dizileri",
-        "${mainUrl}/cin-filmleri/"        to "Çin Filmleri"
+        "${mainUrl}/kore-dizileri-izle-dq/sayfa/"   to "Kore Dizileri",
+        "${mainUrl}/kore-filmleri-izle-dq/sayfa/" to "Kore Filmleri",
+        "${mainUrl}/tayland-dizileri/sayfa/"    to "Tayland Dizileri",
+        "${mainUrl}/tayland-filmleri/sayfa/"    to "Tayland Filmleri",
+        "${mainUrl}/cin-dizileri/sayfa/"        to "Çin Dizileri",
+        "${mainUrl}/cin-filmleri/sayfa/"        to "Çin Filmleri"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}sayfa/${page}", interceptor = interceptor).document
+        val document = app.get("${request.data}${page}", interceptor = interceptor).document
         Log.d("DZK", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
         val home     = document.select("div.listing-section").mapNotNull { it.toSearchResult() }
 
@@ -103,8 +103,8 @@ class DiziKorea : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, interceptor = interceptor).document
 
-        val title       = document.selectFirst("h1 series-title")?.text()?.trim() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster img")?.attr("src")) ?: return null
+        val title       = document.selectFirst("h1 watch-title")?.text()?.trim() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.watch-sidebar-card-wrap img")?.attr("src")) ?: return null
 
         if (url.contains("/dizi/")) {
             val episodes    = mutableListOf<Episode>()
@@ -142,9 +142,9 @@ class DiziKorea : MainAPI() {
     Log.d("DZK", "data » $data")
     val document = app.get(data, interceptor = interceptor).document
 
-    document.select("div.video-services button").forEach {
-        val rawHhs = it.attr("data-hhs")
-        Log.d("DZK", "Found button with data-hhs: $rawHhs")
+    document.select("div.player-source iframe").forEach {
+        val rawHhs = it.attr("data-src")
+        Log.d("DZK", "Found button with data-src: $rawHhs")
 
         val iframe = fixUrlNull(rawHhs) ?: return@forEach
         Log.d("DZK", "iframe » $iframe")

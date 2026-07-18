@@ -101,7 +101,7 @@ class DiziMom : MainAPI() {
         val document = app.get(url, interceptor = interceptor).document
 
         val title       = document.selectFirst("div.title h1")?.text()?.substringBefore(" izle") ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.category_image img")?.attr("src")) ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.category_image img")?.attr("data-src")) ?: return null
         val year        = document.selectXpath("//div[span[contains(text(), 'Yapım Yılı')]]").text().substringAfter("Yapım Yılı : ").trim().toIntOrNull()
         val description = document.selectFirst("div.category_desc")?.text()?.trim()
         val tags        = document.select("div.genres a").mapNotNull { it.text().trim() }
