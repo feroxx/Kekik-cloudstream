@@ -14,7 +14,7 @@ val Int.toMinutes: Long
     get() = this * 1000L
 
 class RecTV : MainAPI() {
-    override var mainUrl              = "https://a.prectv67.lol"
+    override var mainUrl              = "https://a.prectv70.lol"
     override var name                 = "RecTV"
     override val hasMainPage          = true
     override var lang                 = "tr"
@@ -25,9 +25,36 @@ class RecTV : MainAPI() {
 
     private var currentToken: String? = null
     private var tokenExpirationTime: Long = 0L 
-    
-    private val AUTH_URL = "${mainUrl}/api/attest/nonce"
+    private var activeMainUrl: String = mainUrl
 
+    private suspend fun findActiveUrl(): String {
+        val currentUrl = activeMainUrl
+        try {
+            val response = app.get("$currentUrl/api/attest/nonce", headers = mapOf(
+                "User-Agent" to "googleusercontent"
+            ), timeout = 3000)
+            if (response.code == 200 && response.text.contains("nonce")) {
+                return currentUrl
+            }
+        } catch (_: Exception) {}
+
+        Log.d(name, "Scanning for active prectv domain...")
+        for (i in 70..120) {
+            val probeUrl = "https://a.prectv$i.lol"
+            try {
+                val response = app.get("$probeUrl/api/attest/nonce", headers = mapOf(
+                    "User-Agent" to "googleusercontent"
+                ), timeout = 2000)
+                if (response.code == 200 && response.text.contains("nonce")) {
+                    Log.d(name, "Found active prectv domain: $probeUrl")
+                    activeMainUrl = probeUrl
+                    return probeUrl
+                }
+            } catch (_: Exception) {}
+        }
+        return activeMainUrl
+    }
+    
     /**
      * Geçerli bir JWT döndürür. Token yoksa veya süresi dolmak üzereyse yenileme yapar.
      */
@@ -44,8 +71,10 @@ class RecTV : MainAPI() {
 
     private suspend fun refreshToken() {
         Log.d(name, "Refreshing token...")
+        val activeUrl = findActiveUrl()
+        val authUrl = "$activeUrl/api/attest/nonce"
 
-        val response = app.get(AUTH_URL, headers = mapOf(
+        val response = app.get(authUrl, headers = mapOf(
             "User-Agent" to "googleusercontent"
         ))
 
@@ -108,8 +137,9 @@ class RecTV : MainAPI() {
         @Suppress("NAME_SHADOWING") val page = page - 1
 
         val validToken = getValidToken()
+        val activeUrl = findActiveUrl()
 
-        val url  = request.data.replace("SAYFA", "$page")
+        val url  = request.data.replace(mainUrl, activeUrl).replace("SAYFA", "$page")
         val home = app.get(url, headers = mapOf(
             "User-Agent" to "googleusercontent", 
             "Referer" to "https://twitter.com/", 
@@ -132,8 +162,9 @@ class RecTV : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
+        val activeUrl = findActiveUrl()
         val home    = app.get(
-            "${mainUrl}/api/search/${query}/${swKey}/",
+            "${activeUrl}/api/search/${query}/${swKey}/",
             headers = mapOf("user-agent" to "okhttp/4.12.0") 
         )
         val veriler = AppUtils.tryParseJson<RecSearch>(home.text)
@@ -162,12 +193,13 @@ class RecTV : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val veri = AppUtils.tryParseJson<RecItem>(url) ?: return null
+        val activeUrl = findActiveUrl()
+        val resolvedUrl = url.replace(mainUrl, activeUrl)
+        val veri = AppUtils.tryParseJson<RecItem>(resolvedUrl) ?: return null
 
         if (veri.type == "serie") {
             val diziReq  = app.get(
-                "${mainUrl}/api/season/by/serie/${veri.id}/${swKey}/",
-                // load fonksiyonunda da Bearer token gerekiyorsa buraya eklenmelidir.
+                "${activeUrl}/api/season/by/serie/${veri.id}/${swKey}/",
                 headers = mapOf("user-agent" to "okhttp/4.12.0")
             )
             val sezonlar = AppUtils.tryParseJson<List<RecDizi>>(diziReq.text) ?: return null

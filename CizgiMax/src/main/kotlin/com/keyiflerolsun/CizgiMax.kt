@@ -17,11 +17,9 @@ class CizgiMax : MainAPI() {
     override val supportedTypes       = setOf(TvType.Cartoon, TvType.Anime, TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/diziler/page/"       to "Diziler",
-        "${mainUrl}/tur/turkce-dublaj/page/" to "Türkçe Dublaj",
-        "${mainUrl}/tur/turkce-altyazi/page/" to "Türkçe Altyazılı",
-        "${mainUrl}/tur/cartoon/page/"   to "Çizgi Filmler",
-        "${mainUrl}/tur/anime/page/"     to "Animeler"
+        "${mainUrl}/diziler/cizgi-film/"   to "Çizgi Filmler",
+        "${mainUrl}/diziler/dizi/"       to "Diziler",
+        "${mainUrl}/diziler/anime/"     to "Animeler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {

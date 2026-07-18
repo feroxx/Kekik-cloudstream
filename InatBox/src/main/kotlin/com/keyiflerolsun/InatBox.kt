@@ -53,29 +53,26 @@ class InatBox : MainAPI() {
     private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key
 
     override val mainPage = mainPageOf(
-        //"https://str.sprboxs.bar/CDN/001_STR/str.sprboxs.bar//spor_v2.php" to "Spor Kanalları",
-        //"${contentUrl}/tv/cable.php" to "Kanallar Liste 1",
-        //"${contentUrl}/tv/list2.php" to "Kanallar Liste 2",
-        "${contentUrl}/tv/sinema.php" to "Sinema Kanalları",
-        //"${contentUrl}/tv/belgesel.php" to "Belgesel Kanalları",
-        //"${contentUrl}/tv/ulusal.php" to "Ulusal Kanallar",
-        //"${contentUrl}/tv/haber.php" to "Haber Kanalları",
-        //"${contentUrl}/tv/cocuk.php" to "Çocuk Kanalları",
-        "${contentUrl}/tv/dini.php" to "Dini Kanallar",
-        //"${contentUrl}/CDN/001/002/dizibox/ex/index.php" to "EXXEN",
-        "${contentUrl}/ga/index.php" to "Gain",
-        //"${contentUrl}/max/index.php" to "Max-BluTV",
-        "${contentUrl}/nf/index.php" to "Netflix",
-        "${contentUrl}/dsny/index.php" to "Disney+",
-        "${contentUrl}/amz/index.php" to "Amazon Prime",
-        "${contentUrl}/hb/index.php" to "HBO Max",
-        "${contentUrl}/tbi/index.php" to "Tabii",
-        //"${contentUrl}/film/mubi.php" to "Mubi",
-        //"${contentUrl}/ccc/index.php" to "TOD",
-        "${contentUrl}/yabanci-dizi/index.php" to "Yabancı Diziler",
-        "${contentUrl}/yerli-dizi/index.php" to "Yerli Diziler",
-        //"${contentUrl}/film/yerli-filmler.php" to "Yerli Filmler",
-        //"${contentUrl}/film/4k-film-exo.php" to "4K Film İzle | Exo"
+        "${contentUrl}/tv/list1.php"              to "Spor ve Kanallar",
+        "${contentUrl}/tv/list2.php"              to "Kanallar Liste 2",
+        "${contentUrl}/tv/sinema.php"             to "Sinema Kanalları",
+        "${contentUrl}/tv/belgesel.php"           to "Belgesel Kanalları",
+        "${contentUrl}/tv/ulusal.php"             to "Ulusal Kanallar",
+        "${contentUrl}/tv/haber.php"              to "Haber Kanalları",
+        "${contentUrl}/tv/cocuk.php"              to "Çocuk Kanalları",
+        "${contentUrl}/tv/dini.php"               to "Dini Kanallar",
+        "${contentUrl}/ex/index.php"              to "EXXEN",
+        "${contentUrl}/ga/index.php"              to "Gain",
+        "${contentUrl}/nf/index.php"              to "Netflix",
+        "${contentUrl}/dsny/index.php"            to "Disney+",
+        "${contentUrl}/amz/index.php"             to "Amazon Prime",
+        "${contentUrl}/hb/index.php"              to "HBO Max",
+        "${contentUrl}/tbi/index.php"             to "Tabii",
+        "${contentUrl}/film/mubi.php"             to "Mubi",
+        "${contentUrl}/yabanci-dizi/index.php"    to "Yabancı Diziler",
+        "${contentUrl}/yerli-dizi/index.php"      to "Yerli Diziler",
+        "${contentUrl}/film/yerli-filmler.php"    to "Yerli Filmler",
+        "${contentUrl}/film/4k-film-exo.php"      to "4K Film İzle | Exo"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -145,8 +142,8 @@ class InatBox : MainAPI() {
             val type = item.getString("diziType")
 
             return when (type) {
-                "dizi" -> parseTvSeriesResponse(item)
-                "film" -> parseMovieResponse(item)
+                "dizi", "dizi_mode" -> parseTvSeriesResponse(item)
+                "film", "film_mode" -> parseMovieResponse(item)
                 else -> null
             }
 
@@ -529,11 +526,11 @@ class InatBox : MainAPI() {
                     val posterUrl = item.getString("diziImg")
 
                     val searchResponse = when (type) {
-                        "dizi" -> newTvSeriesSearchResponse(name, item.toString()) {
+                        "dizi", "dizi_mode" -> newTvSeriesSearchResponse(name, item.toString()) {
                             this.posterUrl = posterUrl
                         }
 
-                        "film" -> newMovieSearchResponse(name, item.toString()) {
+                        "film", "film_mode" -> newMovieSearchResponse(name, item.toString()) {
                             this.posterUrl = posterUrl
                         }
 
