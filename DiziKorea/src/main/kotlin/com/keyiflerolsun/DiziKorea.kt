@@ -104,7 +104,7 @@ class DiziKorea : MainAPI() {
         val document = app.get(url, interceptor = interceptor).document
 
         val title       = document.selectFirst("h1 series-title")?.text()?.trim() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster")?.attr("img src")) ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster img")?.attr("src")) ?: return null
 
         if (url.contains("/dizi/")) {
             val episodes    = mutableListOf<Episode>()
@@ -112,7 +112,7 @@ class DiziKorea : MainAPI() {
                 val epSeason = it.parent()!!.id().split("-").last().toIntOrNull()
 
                 it.select("li").forEach ep@ { episodeElement ->
-                    val epHref    = fixUrlNull(episodeElement.selectFirst("h2 a")?.attr("href")) ?: return@ep
+                    val epHref    = fixUrlNull(episodeElement.selectFirst("div.episode-list a")?.attr("href")) ?: return@ep
                     val epEpisode = episodeElement.selectFirst("span ep-title")?.text()?.trim()?.toIntOrNull()
 
                     episodes.add(newEpisode(epHref) {
