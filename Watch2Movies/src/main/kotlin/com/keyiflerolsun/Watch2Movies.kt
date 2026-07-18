@@ -8,14 +8,15 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
+import org.jsoup.Jsoup
 
 class Watch2Movies : MainAPI() {
-    override var mainUrl              = "https://watch2movies.net"
+    override var mainUrl              = "https://movies2watch.watch"
     override var name                 = "Watch2Movies"
     override val hasMainPage          = true
     override var lang                 = "en"
     override val hasQuickSearch       = false
-    override val supportedTypes       = setOf(TvType.Movie)
+    override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
         "${mainUrl}/genre/action?page="           to "Action",
@@ -56,11 +57,15 @@ class Watch2Movies : MainAPI() {
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val title     = this.selectFirst("h2 a")?.text() ?: return null
+        val title     = this.selectFirst("h3 a")?.text() ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        return if (href.contains("/series/")) {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        } else {
+            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
@@ -97,6 +102,41 @@ class Watch2Movies : MainAPI() {
         val actors          = document.select("div.row-line a[href*='/cast/']").map { Actor(it.text()) }
         val trailer         = document.selectFirst("iframe#iframe-trailer")?.attr("data-src")
 
+        if (url.contains("/series/")) {
+            val scriptContent = document.select("script").map { it.data() }.firstOrNull { it.contains("current_url") }
+            val currentUrl = scriptContent?.let { Regex("""current_url\s*=\s*['\"]([^'\"]+)['\"];""").find(it)?.groupValues?.get(1) }
+            
+            val episodes = mutableListOf<Episode>()
+            if (currentUrl != null) {
+                val epHtml = app.get(currentUrl, referer = url).text
+                val epDoc = Jsoup.parse(epHtml)
+                epDoc.select("a.eps-item").forEach { element ->
+                    val epName = element.text().trim()
+                    val epHref = fixUrlNull(element.attr("href")) ?: return@forEach
+                    val match = Regex("""(\d+)-(\d+)/?$""").find(epHref)
+                    val epSeason = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    val epEpisode = match?.groupValues?.get(2)?.toIntOrNull() ?: 1
+
+                    episodes.add(newEpisode(epHref) {
+                        this.name = epName
+                        this.season = epSeason
+                        this.episode = epEpisode
+                    })
+                }
+            }
+
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl       = poster
+                this.plot            = description
+                this.year            = year
+                this.tags            = tags
+                this.duration        = duration
+                this.recommendations = recommendations
+                addActors(actors)
+                addTrailer(trailer)
+            }
+        }
+
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl       = poster
             this.plot            = description
@@ -114,36 +154,34 @@ class Watch2Movies : MainAPI() {
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
         val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        return if (href.contains("/series/")) {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        } else {
+            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        }
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("W2M", "data » $data")
-        val epId     = data.split("-").last()
-        val document = app.get("${mainUrl}/ajax/episode/list/${epId}", referer=data).document
+        Log.d("W2M", "loadLinks data » $data")
+        val document = app.get(data).document
+        val scriptContent = document.select("script").map { it.data() }.firstOrNull { it.contains("pl_url") }
+        val plUrl = scriptContent?.let { Regex("""pl_url\s*=\s*['\"]([^'\"]+)['\"];""").find(it)?.groupValues?.get(1) } ?: return false
 
-        document.select("li.nav-item a").forEach {
-            val dataId     = it.attr("data-id")
-            Log.d("W2M", "dataId » $dataId")
-            val modifiedData = data.replace("/movie/", "/watch-movie/")
-            loadExtractor("${modifiedData}.${dataId}", "$mainUrl/", subtitleCallback, callback)
-            // val dataSource = app.get("${mainUrl}/ajax/episode/sources/${dataId}", referer=data).parsedSafe<Sources>()
-            // Log.d("W2M", "iframe » ${dataSource!!.link}")
+        Log.d("W2M", "plUrl » $plUrl")
+        val srvHtml = app.get(plUrl, referer = data).text
+        val srvDoc = Jsoup.parse(srvHtml)
 
-            // // ?   master  adb logcat -v tag | logcat-colorize | grep "W2M" 
-            // // ! D   W2M      data   » https://watch2movies.net/movie/watch-ferry-2-full-118828
-            // // * D   W2M      iframe » https://hanatyury.online/v2/embed-4/NDCSpcJUwFUT?z=
-            // // * D   W2M      iframe » https://pepepeyo.xyz/v2/embed-4/MfDjL0xjrfrX?z=
-            // // ! D   W2M      data   » https://watch2movies.net/movie/watch-adam-full-1542
-            // // * D   W2M      iframe » https://hanatyury.online/v2/embed-4/0DMRS34RzDzF?z=
-            // // * D   W2M      iframe » https://hanatyury.online/v2/embed-4/j3MXnGNwTkdx?z=
-            // // * D   W2M      iframe » https://upstream.to/embed-tigfkb1a9wol.html
-            // // * D   W2M      iframe » https://mixdrop.co/e/kn98qnk6h3k9wv
+        var linksFound = false
+        srvDoc.select("a.sv-item").forEach { element ->
+            val srvUrl = element.attr("data-id")
+            Log.d("W2M", "srvUrl: $srvUrl")
 
-            // // TODO: Extractors not coded yet » UpCloudExtractor.kt
-            // loadExtractor(dataSource!!.link, "${mainUrl}/", subtitleCallback, callback)
+            if (srvUrl.isNotEmpty()) {
+                loadExtractor(srvUrl, "$mainUrl/", subtitleCallback, callback)
+                linksFound = true
+            }
         }
 
-        return true
+        return linksFound
     }
 }

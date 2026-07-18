@@ -20,8 +20,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-open class W2MExtractor(override val mainUrl: String, private val context: Context) : ExtractorApi() {
-    override val name            = "W2MExtractor"
+open class W2MExtractor(override val mainUrl: String, override val name: String, private val context: Context) : ExtractorApi() {
     override val requiresReferer = true
     private lateinit var webView: WebView
 
@@ -60,6 +59,8 @@ window.chrome = { runtime: {} };
 
                         Thread {
                             fetchAndCheckResponse(url, headers) { sourceUrl, headers ->
+                                val linkType = if (sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                @Suppress("DEPRECATION")
                                 callback.invoke(
                                     ExtractorLink(
                                         source  = this@W2MExtractor.name,
@@ -67,7 +68,7 @@ window.chrome = { runtime: {} };
                                         url     = sourceUrl,
                                         referer = headers["Referer"] ?: headers["referer"] ?: mainUrl,
                                         quality = Qualities.Unknown.value,
-                                        type    = ExtractorLinkType.M3U8,
+                                        type    = linkType,
                                         headers = headers
                                     )
                                 )
@@ -89,22 +90,30 @@ window.chrome = { runtime: {} };
         try {
             val connection = URL(url).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
+            connection.connectTimeout = 3000
+            connection.readTimeout = 3000
 
             headers?.forEach { (key, value) ->
                 connection.setRequestProperty(key, value)
             }
 
             connection.connect()
-            val response = BufferedReader(InputStreamReader(connection.inputStream))
-                .lineSequence()
-                .joinToString("\n")
+            val contentType = connection.contentType ?: ""
 
-            if (response.startsWith("#EXTM3U")) {
-                Log.d("W2M", response)
+            if (contentType.contains("mpegurl", ignoreCase = true) || url.contains(".m3u8") || url.contains(".txt")) {
+                val firstLine = BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
+                    reader.readLine() ?: ""
+                }
+                if (firstLine.startsWith("#EXTM3U")) {
+                    Log.d("W2M", "Captured HLS playlist: $url")
+                    onResponseCaptured(connection.url.toString(), headers ?: mapOf())
+                }
+            } else if (contentType.startsWith("video/", ignoreCase = true) || url.contains(".mp4") || url.contains(".mkv")) {
+                Log.d("W2M", "Captured direct video URL: $url")
                 onResponseCaptured(connection.url.toString(), headers ?: mapOf())
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore connection errors during background pre-check
         }
     }
 }

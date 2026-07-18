@@ -14,7 +14,7 @@ class CizgiMax : MainAPI() {
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = true
-    override val supportedTypes       = setOf(TvType.Cartoon)
+    override val supportedTypes       = setOf(TvType.Cartoon, TvType.Movie)
 
     override val mainPage = mainPageOf(
         "/yeni-eklenenler/"    to "Son Eklenenler",
@@ -45,19 +45,35 @@ class CizgiMax : MainAPI() {
         val href      = fixUrlNull(this.selectFirst("a.film-name")?.attr("href") ?: this.selectFirst("a")?.attr("href")) ?: return null
         val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src") ?: this.selectFirst("img")?.attr("data-src"))
 
-        return newTvSeriesSearchResponse(title, href, TvType.Cartoon) { this.posterUrl = posterUrl }
+        val isMovie = href.contains("/film/")
+        return if (isMovie) {
+            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        } else {
+            newTvSeriesSearchResponse(title, href, TvType.Cartoon) { this.posterUrl = posterUrl }
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val response = app.get("${mainUrl}/api/search/suggest/?q=${query}").parsedSafe<SearchResult>()?.animes ?: return listOf()
 
         return response.mapNotNull { result ->
-            newTvSeriesSearchResponse(
-                result.name,
-                fixUrl(result.url),
-                TvType.Cartoon
-            ) {
-                this.posterUrl = fixUrlNull(result.poster)
+            val isMovie = result.url.contains("/film/")
+            if (isMovie) {
+                newMovieSearchResponse(
+                    result.name,
+                    fixUrl(result.url),
+                    TvType.Movie
+                ) {
+                    this.posterUrl = fixUrlNull(result.poster)
+                }
+            } else {
+                newTvSeriesSearchResponse(
+                    result.name,
+                    fixUrl(result.url),
+                    TvType.Cartoon
+                ) {
+                    this.posterUrl = fixUrlNull(result.poster)
+                }
             }
         }
     }
@@ -89,10 +105,18 @@ class CizgiMax : MainAPI() {
             }
         }
 
-        return newTvSeriesLoadResponse(title, url, TvType.Cartoon, episodes) {
-            this.posterUrl = poster
-            this.plot      = description
-            this.tags      = tags
+        return if (episodes.isEmpty()) {
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl = poster
+                this.plot      = description
+                this.tags      = tags
+            }
+        } else {
+            newTvSeriesLoadResponse(title, url, TvType.Cartoon, episodes) {
+                this.posterUrl = poster
+                this.plot      = description
+                this.tags      = tags
+            }
         }
     }
 
@@ -102,9 +126,13 @@ class CizgiMax : MainAPI() {
 
         // Extract base64 servers array
         val script = document.select("script").find { it.data().contains("var servers") }?.data() ?: return false
-        val serversMatch = Regex("""var servers\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\);""").find(script) ?: return false
+        val serversMatch = Regex("""var servers\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\)\s*;?""").find(script) ?: return false
         val serversB64 = serversMatch.groupValues[2]
-        val decodedJson = String(android.util.Base64.decode(serversB64, android.util.Base64.DEFAULT), Charsets.UTF_8)
+        var paddedB64 = serversB64
+        while (paddedB64.length % 4 != 0) {
+            paddedB64 += "="
+        }
+        val decodedJson = String(android.util.Base64.decode(paddedB64, android.util.Base64.DEFAULT), Charsets.UTF_8)
         val servers = AppUtils.tryParseJson<List<ServerItem>>(decodedJson) ?: return false
 
         servers.forEach { server ->
@@ -117,15 +145,15 @@ class CizgiMax : MainAPI() {
                         val tauRes = app.get("https://tau-video.xyz/api/video/$embedId").parsedSafe<TauResponse>()
                         tauRes?.urls?.forEach { tauUrl ->
                             callback.invoke(
-                                 newExtractorLink(
-                                     source = server.label ?: "ÇizgiMax",
-                                     name = "${server.label ?: "ÇizgiMax"} - ${tauUrl.label ?: "Hızlı"}",
-                                     url = tauUrl.url,
-                                     type = ExtractorLinkType.VIDEO
-                                 ) {
-                                     quality = getQualityFromName(tauUrl.label)
-                                     headers = mapOf("Referer" to "$mainUrl/")
-                                 }
+                                newExtractorLink(
+                                    source = server.label ?: "ÇizgiMax",
+                                    name = "${server.label ?: "ÇizgiMax"} - ${tauUrl.label ?: "Hızlı"}",
+                                    url = tauUrl.url,
+                                    type = ExtractorLinkType.VIDEO
+                                ) {
+                                    quality = getQualityFromName(tauUrl.label)
+                                    headers = mapOf("Referer" to "$mainUrl/")
+                                }
                             )
                         }
                     }

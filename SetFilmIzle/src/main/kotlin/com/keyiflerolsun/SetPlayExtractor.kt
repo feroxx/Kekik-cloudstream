@@ -11,7 +11,18 @@ open class SetPlay : ExtractorApi() {
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val iSource = app.get(url, referer = referer).text
+        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        val response = app.get(
+            url = url,
+            headers = mapOf(
+                "User-Agent" to userAgent,
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            ),
+            referer = referer
+        )
+        val iSource = response.text
+        val cookies = response.headers.values("Set-Cookie").joinToString("; ") { it.substringBefore(";") }
 
         val jsonString = Regex("""FirePlayer\([^,]+,\s*(\{.*?\})\s*,\s*(?:true|false)\)""", setOf(RegexOption.DOT_MATCHES_ALL))
             .find(iSource)?.groupValues?.get(1)
@@ -47,7 +58,13 @@ open class SetPlay : ExtractorApi() {
                 type    = ExtractorLinkType.M3U8
             ) {
                 quality = Qualities.Unknown.value
-                headers = mapOf("Referer" to url)
+                headers = mapOf(
+                    "Referer" to url,
+                    "Cookie" to cookies,
+                    "User-Agent" to userAgent,
+                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Accept" to "*/*"
+                )
             }
         )
     }

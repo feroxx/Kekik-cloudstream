@@ -178,8 +178,8 @@ class SetFilmIzle : MainAPI() {
         }.build()
 
         val headers = mapOf(
-            "Referer"      to referer,
-            "Content-Type" to "multipart/form-data; boundary=---------------------------112453778312642376182726606734",
+            "Referer"          to referer,
+            "X-Requested-With" to "XMLHttpRequest"
         )
 
         val request = Request.Builder().url("${mainUrl}/wp-admin/admin-ajax.php").post(requestBody).apply {
@@ -191,42 +191,41 @@ class SetFilmIzle : MainAPI() {
         return client.newCall(request).execute()
     }
 
-override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-): Boolean {
-    Log.d("STF", "data » $data")
-    val document = app.get(data).document
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("STF", "data » $data")
+        val document = app.get(data).document
 
-    document.select("nav.player a").map { element ->
-        val sourceId = element.attr("data-post-id")
-        val name = element.attr("data-player-name")
-        val partKey = element.attr("data-part-key").takeIf { it.isNotEmpty() }
+        document.select("nav.player a").map { element ->
+            val sourceId = element.attr("data-post-id")
+            val name = element.attr("data-player-name")
+            val partKey = element.attr("data-part-key").takeIf { it.isNotEmpty() }
 
-        Triple(name, sourceId, partKey)
-    }.forEach { (name, sourceId, partKey) ->
-        if (sourceId.contains("event")) return@forEach
-        if (sourceId == "") return@forEach
-        var setKey= "SetPlay"
+            Triple(name, sourceId, partKey)
+        }.forEach { (name, sourceId, partKey) ->
+            if (sourceId.contains("event")) return@forEach
+            if (sourceId == "") return@forEach
 
-        val nonce = document.selectFirst("div#playex")?.attr("data-nonce") ?: ""
-        val multiPart = sendMultipartRequest(nonce, sourceId, name, partKey ?: "", data)
-        val sourceBody = multiPart.body.string()
-        val sourceIframe = JSONObject(sourceBody).optJSONObject("data")?.optString("url") ?: return@forEach
+            val nonce = document.selectFirst("div#playex")?.attr("data-nonce") ?: ""
+            val multiPart = sendMultipartRequest(nonce, sourceId, name, partKey ?: "", data)
+            val sourceBody = multiPart.body.string()
+            val sourceIframe = JSONObject(sourceBody).optJSONObject("data")?.optString("url") ?: return@forEach
 
-        Log.d("STF", "iframe » $sourceIframe")
+            Log.d("STF", "iframe » $sourceIframe")
 
-        val finalUrl = if (sourceIframe.contains("setplay")) {
-            sourceIframe // partKey ekleme
-        } else {
-            if (partKey != null) "$sourceIframe?partKey=$partKey" else sourceIframe
+            val finalUrl = if (sourceIframe.contains("setplay")) {
+                sourceIframe
+            } else {
+                if (partKey != null) "$sourceIframe?partKey=$partKey" else sourceIframe
+            }
+
+            loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
         }
 
-        loadExtractor(finalUrl, "$mainUrl/", subtitleCallback, callback)
+        return true
     }
-
-    return true
-}
 }
