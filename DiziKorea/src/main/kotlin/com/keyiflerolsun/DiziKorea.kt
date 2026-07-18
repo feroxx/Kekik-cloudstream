@@ -55,44 +55,36 @@ class DiziKorea : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}${page}", interceptor = interceptor).document
         Log.d("DZK", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
-        val home     = document.select("div.listing-section").mapNotNull { it.toSearchResult() }
+        val home     = document.select("a.poster-card").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("div.poster-card-meta")?.text()?.trim() ?: return null
-        val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
+        val title     = this.selectFirst("span.poster-card-title")?.text()?.trim()
+            ?: this.selectFirst("div.poster-card-meta")?.text()?.trim()
+            ?: return null
+        val href      = fixUrlNull(this.attr("href")) ?: return null
         val posterUrl = fixUrlNull(this.selectFirst("div.poster-card-image img")?.attr("src"))
 
         return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) { this.posterUrl = posterUrl }
     }
 
-    private fun Element.toPostSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("span")?.text()?.trim() ?: return null
-        val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.poster-long-image img.lazy")?.attr("data-src"))
-
-        return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) { this.posterUrl = posterUrl }
-    }
-
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.post(
-            "${mainUrl}/search",
-            headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-            referer = "${mainUrl}/",
-            data    = mapOf("query" to query)
-        ).parsedSafe<KoreaSearch>()!!.theme
+        val response = app.get(
+            "${mainUrl}/ara?q=$query",
+            interceptor = interceptor
+        ).parsedSafe<KoreaSearchResponse>()
 
-        val document = Jsoup.parse(response)
-        val results  = mutableListOf<SearchResponse>()
+        val results = mutableListOf<SearchResponse>()
+        response?.items?.forEach { item ->
+            val href = fixUrl(item.url)
+            val title = item.title
+            val posterUrl = fixUrlNull(item.poster)
 
-        document.select("ul li").forEach { listItem ->
-            val href = listItem.selectFirst("a")?.attr("href")
-            if (href != null && (href.contains("/dizi/") || href.contains("/film/"))) {
-                val result = listItem.toPostSearchResult()
-                result?.let { results.add(it) }
-            }
+            results.add(newTvSeriesSearchResponse(title, href, TvType.AsianDrama) {
+                this.posterUrl = posterUrl
+            })
         }
 
         return results
@@ -103,17 +95,17 @@ class DiziKorea : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, interceptor = interceptor).document
 
-        val title       = document.selectFirst("h1 watch-title")?.text()?.trim() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.watch-sidebar-card-wrap img")?.attr("src")) ?: return null
+        val title       = document.selectFirst("h1.series-title, h1.watch-title")?.text()?.trim() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster img, img.sidebar-poster")?.attr("src"))
 
         if (url.contains("/dizi/")) {
             val episodes    = mutableListOf<Episode>()
             document.select("div.episode-list").forEach {
-                val epSeason = it.parent()!!.id().split("-").last().toIntOrNull()
+                val epSeason = it.attr("data-season").toIntOrNull()
 
-                it.select("li").forEach ep@ { episodeElement ->
-                    val epHref    = fixUrlNull(episodeElement.selectFirst("div.episode-list a")?.attr("href")) ?: return@ep
-                    val epEpisode = episodeElement.selectFirst("span ep-title")?.text()?.trim()?.toIntOrNull()
+                it.select("a.episode-item").forEach ep@ { episodeElement ->
+                    val epHref    = fixUrlNull(episodeElement.attr("href")) ?: return@ep
+                    val epEpisode = episodeElement.selectFirst("span.ep-number")?.text()?.trim()?.toIntOrNull()
 
                     episodes.add(newEpisode(epHref) {
                         this.name = "${epSeason}. Sezon ${epEpisode}. Bölüm"
