@@ -127,7 +127,8 @@ class DiziPal : MainAPI() {
         // 2. Eğer bir kanal sayfasındaysak, senin verdiğin parametrelerle API'den verileri çek
         if (request.data.contains("/kanal/")) {
             // HTML içinden channelId'yi dinamik olarak çekmeye çalışalım (bulamazsak boş göndeririz)
-            val channelIdFromDoc = Regex("""channelId\s*[:=]\s*(\d+)""").find(document.html())?.groupValues?.get(1)
+            val channelIdFromDoc = document.selectFirst("input[name=channelId]")?.attr("value")
+                ?: Regex("""channelId\s*[:=]\s*(\d+)""").find(document.html())?.groupValues?.get(1)
             val channelSlug = request.data.substringAfterLast("/")
 
             try {

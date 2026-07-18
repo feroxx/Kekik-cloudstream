@@ -90,21 +90,41 @@ class CloseLoad : ExtractorApi() {
             val functionBody = if (funcStartIdx != -1) scriptContent.substring(funcStartIdx, funcEndIdx) else scriptContent
 
             // 4. KRİTİK DOKUNUŞ: Dinamik ROT (Caesar) Kaydırma (Shift) Değerini Çıkar
-            // JS'teki `c.charCodeAt(0) + 13` veya yeni değer neyse onu dinamik okuruz (bulamazsa default 13)
+            var rotShift = 13
             val rotShiftMatch = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex().find(functionBody)
-            val rotShift = rotShiftMatch?.groupValues?.get(1)?.toIntOrNull() ?: 13
+            if (rotShiftMatch != null) {
+                rotShift = rotShiftMatch.groupValues[1].toInt()
+            } else {
+                val rotShiftMatch2 = """o\s*-\s*base\s*([+-])\s*(\d+)""".toRegex().find(functionBody)
+                if (rotShiftMatch2 != null) {
+                    val sign = rotShiftMatch2.groupValues[1]
+                    val num = rotShiftMatch2.groupValues[2].toInt()
+                    rotShift = if (sign == "-") (26 - num) % 26 else num
+                }
+            }
 
             // --- OPERASYON SIRASINI DİNAMİK OKU --- //
-            val reverseIdx = functionBody.indexOf(".reverse()")
-            val atobIdx = functionBody.indexOf("atob(")
-            val rotIdx = functionBody.indexOf(".replace(")
+            val operations = mutableListOf<Pair<Int, String>>()
 
-            // İşlemlerin JS'deki sırasını bul ve Kotlin'de o sıraya göre diz
-            val operations = listOf(
-                Pair(reverseIdx, "reverse"),
-                Pair(atobIdx, "atob"),
-                Pair(rotIdx, "rot")
-            ).filter { it.first != -1 }.sortedBy { it.first }
+            var index = functionBody.indexOf("atob(")
+            while (index >= 0) {
+                operations.add(Pair(index, "atob"))
+                index = functionBody.indexOf("atob(", index + 1)
+            }
+
+            index = functionBody.indexOf("reverse")
+            while (index >= 0) {
+                operations.add(Pair(index, "reverse"))
+                index = functionBody.indexOf("reverse", index + 1)
+            }
+
+            index = functionBody.indexOf("replace")
+            while (index >= 0) {
+                operations.add(Pair(index, "rot"))
+                index = functionBody.indexOf("replace", index + 1)
+            }
+
+            operations.sortBy { it.first }
 
             var result = parts.joinToString("")
 

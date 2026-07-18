@@ -204,102 +204,134 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-    private fun dcHello(parts: List<String>): String {
-        val s = parts.joinToString("")
+    data class DecOp(val name: String, val rotShift: Int = 0)
 
-        fun String.rot13(): String = this.map { c ->
-            when (c) {
-                in 'a'..'z' -> (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-                in 'A'..'Z' -> (((c - 'A' + 13) % 26) + 'A'.code).toChar()
-                else -> c
+    private fun decryptLocalUrl(unpackedScript: String): String? {
+        try {
+            // 1. Extract parts array
+            val partsMatch = """\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\)""".toRegex().find(unpackedScript)
+            val parts = partsMatch?.groupValues?.get(1)?.split(",")?.map { 
+                it.trim().trim('\'', '"').replace("\\/", "/") 
+            } ?: return null
+
+            // 2. Extract magicNum and magicOffset
+            val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(unpackedScript)
+            val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
+            val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
+
+            // 3. Isolate function body
+            val funcBody = unpackedScript.substringAfter("function dc_").substringBefore("function d1x")
+
+            // 4. Extract operations and their shift values in execution order
+            val operations = mutableListOf<Pair<Int, DecOp>>()
+
+            var index = funcBody.indexOf("atob(")
+            while (index >= 0) {
+                operations.add(Pair(index, DecOp("atob")))
+                index = funcBody.indexOf("atob(", index + 1)
             }
-        }.joinToString("")
 
-        fun ByteArray.rot13(): ByteArray {
-            val res = ByteArray(this.size)
-            for (i in this.indices) {
-                val b = this[i].toInt() and 0xFF
-                var c = b.toChar()
-                if (c in 'a'..'z') {
-                    c = (((c - 'a' + 13) % 26) + 'a'.code).toChar()
-                } else if (c in 'A'..'Z') {
-                    c = (((c - 'A' + 13) % 26) + 'A'.code).toChar()
+            index = funcBody.indexOf("reverse")
+            while (index >= 0) {
+                operations.add(Pair(index, DecOp("reverse")))
+                index = funcBody.indexOf("reverse", index + 1)
+            }
+
+            index = funcBody.indexOf("replace")
+            while (index >= 0) {
+                val block = funcBody.substring(index, minOf(index + 300, funcBody.length))
+                var shift = 13
+                val rotShiftMatch = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex().find(block)
+                if (rotShiftMatch != null) {
+                    shift = rotShiftMatch.groupValues[1].toInt()
+                } else {
+                    val rotShiftMatch2 = """o\s*-\s*base\s*([+-])\s*(\d+)""".toRegex().find(block)
+                    if (rotShiftMatch2 != null) {
+                        val sign = rotShiftMatch2.groupValues[1]
+                        val num = rotShiftMatch2.groupValues[2].toInt()
+                        shift = if (sign == "-") (26 - num) % 26 else num
+                    }
                 }
-                res[i] = c.code.toByte()
+                operations.add(Pair(index, DecOp("rot", shift)))
+                index = funcBody.indexOf("replace", index + 1)
             }
-            return res
-        }
 
-        fun String.b64(): ByteArray? = try { android.util.Base64.decode(this, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
-        fun ByteArray.b64(): ByteArray? = try { android.util.Base64.decode(this, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
+            operations.sortBy { it.first }
 
-        fun ByteArray.unmix(): String {
-            val sb = StringBuilder()
-            for (i in this.indices) {
-                val charCode = this[i].toInt() and 0xFF
-                val newChar = (charCode - (399756995 % (i + 5)) + 256) % 256
-                sb.append(newChar.toChar())
-            }
-            return sb.toString()
-        }
+            var result = parts.joinToString("")
 
-        fun isValid(result: String?): Boolean {
-            if (result.isNullOrEmpty() || result.length < 10) return false
-            val isGarbage = result.any { it.code !in 32..126 }
-            return !isGarbage
-        }
-
-        val strategies = listOf<() -> String?>(
-            { s.rot13().reversed().b64()?.unmix() },
-            { s.rot13().b64()?.reversedArray()?.unmix() },
-            { s.reversed().b64()?.rot13()?.unmix() },
-            { s.reversed().rot13().b64()?.unmix() },
-            { s.b64()?.rot13()?.reversedArray()?.unmix() },
-            { s.reversed().b64()?.b64()?.unmix() },
-            { s.b64()?.reversedArray()?.rot13()?.unmix() },
-            { s.rot13().reversed().b64()?.b64()?.unmix() }
-        )
-
-        // Stratejileri sırayla dene
-        for (strategy in strategies) {
-            try {
-                val result = strategy()
-                if (isValid(result)) {
-                    return result!!
+            // Execute operations in order
+            for (op in operations) {
+                val action = op.second
+                when (action.name) {
+                    "reverse" -> {
+                        result = result.reversed()
+                    }
+                    "atob" -> {
+                        var paddedResult = result
+                        while (paddedResult.length % 4 != 0) {
+                            paddedResult += "="
+                        }
+                        result = String(android.util.Base64.decode(paddedResult, android.util.Base64.NO_WRAP), Charsets.ISO_8859_1)
+                    }
+                    "rot" -> {
+                        val rotShift = action.rotShift
+                        val rot = StringBuilder()
+                        for (c in result) {
+                            if (c in 'a'..'z') {
+                                val shifted = c.code + rotShift
+                                rot.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
+                            } else if (c in 'A'..'Z') {
+                                val shifted = c.code + rotShift
+                                rot.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
+                            } else {
+                                rot.append(c)
+                            }
+                        }
+                        result = rot.toString()
+                    }
                 }
-            } catch (e: Exception) {
-                continue
             }
-        }
 
-        return ""
+            // 5. Modulo Unmix
+            val unmix = StringBuilder()
+            for (i in result.indices) {
+                val charCode = result[i].code.toLong()
+                val decryptedCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
+                unmix.append(decryptedCode.toInt().toChar())
+            }
+
+            return unmix.toString()
+
+        } catch (e: Exception) {
+            Log.e("HDCH", "decryptLocalUrl Error: ${e.message}")
+            return null
+        }
     }
- 
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
-		    Log.d("HDCH", "script » $script")
-        val videoData = getAndUnpack(script).substringAfter("file_link=\"").substringBefore("\";")
-		    Log.d("HDCH", "videoData » $videoData")
-        val base64Input = videoData.substringAfter("([").substringBefore("])")
-        val lastUrl = dcHello(Regex("\"(.*?)\"").findAll(base64Input).map { it.groupValues[1] }.toList()).substringAfter("https").let { "https$it" }
+        Log.d("HDCH", "script » $script")
+        val unpackedScript = getAndUnpack(script)
+        val decryptedUrl = decryptLocalUrl(unpackedScript) ?: return
+        val lastUrl = decryptedUrl.substringAfter("https").let { "https$it" }
         val subData   = script.substringAfter("tracks: [").substringBefore("]")
-		    Log.d("HDCH", "subData » $subData")
+        Log.d("HDCH", "subData » $subData")
         AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
             val subtitleUrl = "${mainUrl}${it.file}/"
 
-	    val headers = mapOf(
-        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
-        "Referer" to "subtitleUrl"
-    )
-    val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
-                if (subtitleResponse.isSuccessful) {
-                    subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
-                    Log.d("HDCH", "Subtitle added: $subtitleUrl")
-                } else {
-                    Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
-                }
+            val headers = mapOf(
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+                "Referer" to "subtitleUrl"
+            )
+            val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
+            if (subtitleResponse.isSuccessful) {
+                subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
+                Log.d("HDCH", "Subtitle added: $subtitleUrl")
+            } else {
+                Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
+            }
         }
         callback.invoke(
             newExtractorLink(
@@ -307,7 +339,7 @@ class HDFilmCehennemi : MainAPI() {
                 name    = source,
                 url     = lastUrl,
                 type    = ExtractorLinkType.M3U8
-			) {
+            ) {
                 headers = mapOf("Referer" to "${mainUrl}/", "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0")
                 quality = Qualities.Unknown.value
             }
