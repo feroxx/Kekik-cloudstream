@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie")
-    iconUrl = "https://www.google.com/s2/favicons?domain=www.filmmodu17.com&sz=%size%"
+    iconUrl = "https://www.filmmodu.one/icon/favicon.ico"
 }

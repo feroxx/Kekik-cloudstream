@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("TvSeries")
-    iconUrl = "https://cdn.diziyou6.com/wp-content/uploads/2020/04/diziyou-favicon.png"
+    iconUrl = "https://cdn.diziyou.one/wp-content/uploads/2020/04/diziyou-favicon.png"
 }
