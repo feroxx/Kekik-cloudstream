@@ -124,7 +124,7 @@ class CizgiMax : MainAPI() {
         // 1. Parse 'servers' array
         val serversMatch = Regex("""servers\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\)""").find(script)
         if (serversMatch != null) {
-            val serversB64 = serversMatch.groupValues[2]
+            val serversB64 = serversMatch.groupValues[2].replace("\\", "")
             var paddedB64 = serversB64
             while (paddedB64.length % 4 != 0) paddedB64 += "="
             try {
@@ -139,7 +139,7 @@ class CizgiMax : MainAPI() {
         // 2. Parse 'serversByLang' map
         val serversByLangMatch = Regex("""serversByLang\s*=\s*JSON\.parse\(atob\((["'])(.*?)\1\)\)""").find(script)
         if (serversByLangMatch != null) {
-            val serversByLangB64 = serversByLangMatch.groupValues[2]
+            val serversByLangB64 = serversByLangMatch.groupValues[2].replace("\\", "")
             var paddedB64 = serversByLangB64
             while (paddedB64.length % 4 != 0) paddedB64 += "="
             try {
