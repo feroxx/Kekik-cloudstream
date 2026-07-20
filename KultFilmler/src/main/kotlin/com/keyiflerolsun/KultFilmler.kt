@@ -8,9 +8,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.network.CloudflareKiller
-import com.lagradost.cloudstream3.utils.StringUtils.decodeUri
 import okhttp3.Interceptor
 import okhttp3.Response
 import android.util.Base64
@@ -25,10 +23,10 @@ class KultFilmler : MainAPI() {
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 	
-	    // ! CloudFlare bypass
-    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/library/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
-    override var sequentialMainPageDelay       = 150L  // ? 0.15 saniye
-    override var sequentialMainPageScrollDelay = 150L  // ? 0.15 saniye
+    // ! CloudFlare bypass
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay       = 150L
+    override var sequentialMainPageScrollDelay = 150L
 
     // ! CloudFlare v2
     private val cloudflareKiller by lazy { CloudflareKiller() }
@@ -76,21 +74,28 @@ class KultFilmler : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(request.data).document
-        val movieBoxes = document.select("div.col-md-12 div.movie-box")
+        val url = if (page > 1) {
+            "${request.data.removeSuffix("/")}/page/$page/"
+        } else {
+            request.data
+        }
+        val document = app.get(url).document
+        val movieBoxes = document.select("a.mcard")
         val home = movieBoxes.mapNotNull { 
-        it.toSearchResult() 
-    }
+            it.toSearchResult() 
+        }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("div.img img")?.attr("alt")?.takeIf { it.isNotEmpty() } ?: return null
-        Log.d("toSearchResult", "Title: $title")
+        val title = this.selectFirst("div.mtx h3")?.text()?.trim()
+            ?: this.selectFirst("img.pimg")?.attr("alt")?.takeIf { it.isNotEmpty() }
+            ?: return null
 
-        val href = this.selectFirst("a")?.attr("href")?.let { fixUrlNull(it) } ?: return null
-        val posterUrl = this.selectFirst("div.img img")?.attr("src")?.let { fixUrlNull(it) }
+        val href = this.attr("href")?.let { fixUrlNull(it) } ?: return null
+        val posterUrl = this.selectFirst("img.pimg")?.attr("src")?.let { fixUrlNull(it) }
+            ?: this.selectFirst("img.pimg")?.attr("data-src")?.let { fixUrlNull(it) }
 
         return if (href.contains("/dizi/")) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
@@ -100,9 +105,8 @@ class KultFilmler : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}?s=${query}").document
-
-        return document.select("div.movie-box").mapNotNull { it.toSearchResult() }
+        val document = app.get("${mainUrl}/?s=${query}").document
+        return document.select("a.mcard").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -110,29 +114,40 @@ class KultFilmler : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title           = document.selectFirst("div.film-bilgileri img")?.attr("alt")?.trim() ?: document.selectFirst("[property='og:title']")?.attr("content")?.trim() ?: return null
-        val poster          = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
-        val description     = document.selectFirst("div.description")?.text()?.trim()
-        var tags            = document.select("ul.post-categories a").map { it.text() }
-        val year            = Regex("""(\d+)""").find(document.selectFirst("li.release")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        val duration        = Regex("""(\d+)""").find(document.selectFirst("li.time")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        val actors          = document.select("div.actors a").map {
-            Actor(it.text())
+        val rawTitle = document.selectFirst("h1.sec-h")?.text()?.trim()
+            ?: document.selectFirst("h2.sec-h")?.text()?.trim()
+            ?: document.selectFirst("[property='og:title']")?.attr("content")?.substringBefore(" - Kült Filmler")?.trim()
+            ?: return null
+        val title = rawTitle.removeSuffix("İzle").removeSuffix("izle").trim()
+
+        val poster      = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
+        val description = document.selectFirst("#desc")?.text()?.trim() ?: document.selectFirst("div.description")?.text()?.trim()
+        val tags        = document.select("div.genres a").map { it.text() }
+        
+        val year        = document.selectFirst("a[href*=/yapim/]")?.text()?.trim()?.toIntOrNull()
+
+        val durationText = document.select("div.irow").firstOrNull { 
+            it.selectFirst("div.ilabel")?.text()?.contains("Süre", ignoreCase = true) == true 
+        }?.selectFirst("div.ivalue")?.text()
+        val duration = durationText?.let { Regex("""(\d+)""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+
+        val actors = document.select("a.cmember").mapNotNull {
+            val name = it.selectFirst("h5")?.text()?.trim() ?: return@mapNotNull null
+            val actorPoster = it.selectFirst("div.av img")?.attr("src")?.let { fixUrlNull(it) }
+            Actor(name, actorPoster)
         }
 
         if (url.contains("/dizi/")) {
-            tags  = document.select("div.category a").map { it.text() }
-
-            val episodes = document.select("div.episode-box").mapNotNull {
-                val epHref    = fixUrlNull(it.selectFirst("div.name a")?.attr("href")) ?: return@mapNotNull null
-                val ssnDetail = it.selectFirst("span.episodetitle")?.ownText()?.trim() ?: return@mapNotNull null
-                val epDetail  = it.selectFirst("span.episodetitle b")?.ownText()?.trim() ?: return@mapNotNull null
-                val epName    = "$ssnDetail - $epDetail"
-                val epSeason  = ssnDetail.substringBefore(". ").toIntOrNull()
-                val epEpisode = epDetail.substringBefore(". ").toIntOrNull()
+            val episodes = document.select("a.ep").mapNotNull {
+                val epHref = fixUrlNull(it.attr("href")) ?: return@mapNotNull null
+                val epText = it.selectFirst("h4")?.text()?.trim() ?: return@mapNotNull null
+                val epSeason = it.parent()?.attr("data-season")?.toIntOrNull() 
+                    ?: Regex("""(\d+)\.\s*Sezon""").find(epText)?.groupValues?.get(1)?.toIntOrNull() 
+                    ?: 1
+                val epEpisode = Regex("""(\d+)\.\s*Bölüm""").find(epText)?.groupValues?.get(1)?.toIntOrNull()
 
                 newEpisode(epHref) {
-                    this.name    = epName
+                    this.name    = epText
                     this.season  = epSeason
                     this.episode = epEpisode
                 }
@@ -158,41 +173,17 @@ class KultFilmler : MainAPI() {
         }
     }
 
-    private fun getIframe(sourceCode: String): String {
-        // val atobKey = Regex("""atob\("(.*)"\)""").find(sourceCode)?.groupValues?.get(1) ?: return ""
-
-        // return Jsoup.parse(String(Base64.decode(atobKey))).selectFirst("iframe")?.attr("src") ?: ""
-
-        val atob = Regex("""PHA\+[0-9a-zA-Z+/=]*""").find(sourceCode)?.value ?: return ""
-
-        val padding    = 4 - atob.length % 4
-        val atobPadded = if (padding < 4) atob.padEnd(atob.length + padding, '=') else atob
-
-        val iframe = Jsoup.parse(String(Base64.decode(atobPadded, Base64.DEFAULT), Charsets.UTF_8))
-
-        return fixUrlNull(iframe.selectFirst("iframe")?.attr("src")) ?: ""
+    private fun extractSubtitleUrl(sourceCode: String): String? {
+        val pattern = Pattern.compile("(https?://[^\"\\s]+\\.srt)")
+        val matcher = pattern.matcher(sourceCode)
+        
+        if (matcher.find()) {
+            return matcher.group(1)
+        }
+        return null
     }
-private fun extractSubtitleUrl(sourceCode: String): String? {
-    Log.d("KLT", "Source code length: ${sourceCode.length}")
-    Log.d("KLT", "Source code contains 'playerjsSubtitle': ${sourceCode.contains("playerjsSubtitle")}")
-    Log.d("KLT", "Source code contains '.srt': ${sourceCode.contains(".srt")}")
-    
-    // Basit pattern ile test
-    val pattern = Pattern.compile("(https?://[^\"\\s]+\\.srt)")
-    val matcher = pattern.matcher(sourceCode)
-    
-    if (matcher.find()) {
-        val subtitleUrl = matcher.group(1)
-        Log.d("KLT", "Found subtitle URL: $subtitleUrl")
-        return subtitleUrl
-    }
-    
-    // Bulunamazsa kaynak kodun bir kısmını logla
-    Log.d("KLT", "First 500 chars of source: ${sourceCode.take(500)}")
-    Log.d("KLT", "No subtitle URL found in source code")
-    return null
-}
-       private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
+
+    private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
         if (iframeUrl.isEmpty()) return null
         try {
             val headers = mapOf(
@@ -200,9 +191,7 @@ private fun extractSubtitleUrl(sourceCode: String): String? {
                 "Referer" to mainUrl
             )
             val iframeResponse = app.get(iframeUrl, headers=headers)
-            val iframeSource = iframeResponse.text
-		Log.d("KLT", "iframeSource » $iframeSource")
-            return extractSubtitleUrl(iframeSource)
+            return extractSubtitleUrl(iframeResponse.text)
         } catch (e: Exception) {
             return null
         }
@@ -213,26 +202,26 @@ private fun extractSubtitleUrl(sourceCode: String): String? {
         val document = app.get(data).document
         val iframes  = mutableSetOf<String>()
 
-        val mainFrame = getIframe(document.html())
-        if (mainFrame.isNotEmpty()) {
-            iframes.add(mainFrame)
+        fun cleanUrl(url: String): String {
+            if (url.startsWith("//")) return "https:$url"
+            return url
         }
 
-        document.select("a.alternatif").forEach {
-            val altUrl = fixUrlNull(it.attr("href"))
-            if (altUrl != null && altUrl != data) {
-                try {
-                    val altDoc = app.get(altUrl).document
-                    val altFrame = getIframe(altDoc.html())
-                    if (altFrame.isNotEmpty()) {
-                        iframes.add(altFrame)
-                    }
-                    val inlineFrame = altDoc.selectFirst("div.container#player iframe")?.attr("src")
-                    if (inlineFrame != null) {
-                        iframes.add(inlineFrame)
-                    }
-                } catch (e: Exception) {
-                    Log.d("KLT", "Error fetching alt URL: $altUrl")
+        // 1. Default playing iframes
+        document.select("div#player iframe").firstOrNull()?.attr("src")?.let { 
+            iframes.add(fixUrl(cleanUrl(it))) 
+        }
+        document.select("div.kf-embed iframe").firstOrNull()?.attr("src")?.let { 
+            iframes.add(fixUrl(cleanUrl(it))) 
+        }
+
+        // 2. Extract from JSON inside script#kf-srcdata
+        val srcJson = document.selectFirst("script#kf-srcdata")?.html()
+        if (srcJson != null) {
+            Regex("""src=\\?"([^"\\]+)""").findAll(srcJson).forEach { 
+                val url = fixUrl(cleanUrl(it.groupValues[1].replace("\\/", "/")))
+                if (url.startsWith("http")) {
+                    iframes.add(url)
                 }
             }
         }
@@ -306,7 +295,6 @@ private fun extractSubtitleUrl(sourceCode: String): String? {
                         foundLinks = true
                     }
 
-                    // Extract subtitles from the initial iframe response if any
                     val subtitleUrl = extractSubtitleUrl(iframeResponse.text)
                     if (subtitleUrl != null) {
                         @Suppress("DEPRECATION")
@@ -316,7 +304,6 @@ private fun extractSubtitleUrl(sourceCode: String): String? {
                     Log.d("KLT", "Vidpapi error: ${e.message}")
                 }
             } else {
-                // Extract subtitle for other iframes
                 val subtitleUrl = extractSubtitleFromIframe(iframe)
                 if (subtitleUrl != null) {
                     @Suppress("DEPRECATION")

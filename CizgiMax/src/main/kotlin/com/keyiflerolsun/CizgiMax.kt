@@ -17,32 +17,32 @@ class CizgiMax : MainAPI() {
     override val supportedTypes       = setOf(TvType.Cartoon, TvType.Anime, TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/diziler/cizgi-film/"   to "Çizgi Filmler",
+        "${mainUrl}/diziler/cizgi-film/" to "Çizgi Filmler",
         "${mainUrl}/diziler/dizi/"       to "Diziler",
-        "${mainUrl}/diziler/anime/"     to "Animeler"
+        "${mainUrl}/diziler/anime/"      to "Animeler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val requestUrl = if (request.data.contains("/page/")) {
-            request.data.replace("/page/", "/page/$page/")
+        val requestUrl = if (page > 1) {
+            val separator = if (request.data.contains("?")) "&" else "?"
+            "${request.data.removeSuffix("/")}${separator}page=$page"
         } else {
-            "${request.data}$page/"
+            request.data
         }
 
         val document = app.get(requestUrl).document
-        val home     = document.select("div.films-list div.flw-item").mapNotNull { it.toSearchResult() }
+        val home     = document.select("div.film-list div.film-item").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("a.film-name")?.text()?.trim() 
-            ?: this.selectFirst("img.film-poster-img")?.attr("alt")?.trim()
-            ?: return null
-        var href      = fixUrlNull(this.selectFirst("a.film-name")?.attr("href") 
-            ?: this.selectFirst("a.film-poster-ahref")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img.film-poster-img")?.attr("data-src") 
-            ?: this.selectFirst("img.film-poster-img")?.attr("src"))
+        val nameEl = this.selectFirst("a.film-name") ?: return null
+        val title  = nameEl.text().trim()
+        val href   = fixUrlNull(nameEl.attr("href")) ?: return null
+        
+        val imgEl  = this.selectFirst("a.poster img")
+        val posterUrl = fixUrlNull(imgEl?.attr("src") ?: imgEl?.attr("data-src"))
 
         val isMovie = href.contains("/film/")
         val type = if (isMovie) TvType.Movie else TvType.Cartoon
@@ -55,17 +55,25 @@ class CizgiMax : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/arama/?q=${query}").document
-        return document.select("div.films-list div.flw-item").mapNotNull { it.toSearchResult() }
+        val document = app.get("${mainUrl}/ara/?q=${query}").document
+        return document.select("div.film-list div.film-item").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title       = document.selectFirst("h2.heading-name")?.text()?.trim() ?: return null
-        val poster      = fixUrlNull(document.selectFirst("img.film-poster-img")?.attr("src") ?: document.selectFirst("img.film-poster-img")?.attr("data-src"))
-        val description = document.selectFirst("div.description")?.text()?.trim()
-        val tags        = document.select("div.elements div.row-line").find { it.text().contains("Tür:") }?.select("a")?.map { it.text().trim() } ?: emptyList()
+        val titleEl     = document.selectFirst("h1 a.anime-title-link") ?: document.selectFirst("h1")
+        val title       = titleEl?.text()?.trim() ?: return null
+        
+        val imgEl       = document.selectFirst("div.anime-poster img")
+        val poster      = fixUrlNull(imgEl?.attr("src") ?: imgEl?.attr("data-src"))
+        
+        val description = document.selectFirst("p.anime-desc")?.text()?.trim()
+        val tags        = document.select("li.meta-genres strong a").map { it.text().trim() }
+        
+        val year        = document.select("ul.anime-meta-col li").firstOrNull { 
+            it.text().contains("Yayın Yılı", ignoreCase = true) 
+        }?.selectFirst("strong")?.text()?.toIntOrNull()
 
         val episodes = mutableListOf<Episode>()
 
@@ -93,12 +101,14 @@ class CizgiMax : MainAPI() {
                 this.posterUrl = poster
                 this.plot      = description
                 this.tags      = tags
+                this.year      = year
             }
         } else {
             newTvSeriesLoadResponse(title, url, TvType.Cartoon, episodes) {
                 this.posterUrl = poster
                 this.plot      = description
                 this.tags      = tags
+                this.year      = year
             }
         }
     }
@@ -172,19 +182,39 @@ class CizgiMax : MainAPI() {
                 }
             } else if (!server.streamUrl.isNullOrEmpty()) {
                 val streamUrl = if (server.streamUrl.startsWith("http")) server.streamUrl else "${mainUrl}${server.streamUrl}"
+                var finalUrl = streamUrl
+                try {
+                    val headRes = app.get(streamUrl, headers = mapOf("Referer" to "$mainUrl/"), allowRedirects = false)
+                    if (headRes.code == 302 || headRes.code == 301) {
+                        val redirectLoc = headRes.headers["location"] ?: headRes.headers["Location"]
+                        if (!redirectLoc.isNullOrEmpty()) {
+                            finalUrl = redirectLoc
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("CZGM", "Redirect error: ${e.message}")
+                }
+
                 var label = server.label ?: "ÇizgiMax"
                 if (server.type != null) {
                     label = "$label (${server.type})"
                 }
+
+                val headersMap = if (finalUrl.contains("sibnet.ru")) {
+                    mapOf("Referer" to "https://video.sibnet.ru/")
+                } else {
+                    mapOf("Referer" to "$mainUrl/")
+                }
+
                 callback.invoke(
                     newExtractorLink(
                         source = label,
                         name = label,
-                        url = streamUrl,
+                        url = finalUrl,
                         type = ExtractorLinkType.VIDEO
                     ) {
                         quality = Qualities.Unknown.value
-                        headers = mapOf("Referer" to "$mainUrl/")
+                        headers = headersMap
                     }
                 )
             } else if (!server.src.isNullOrEmpty()) {

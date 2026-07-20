@@ -4,18 +4,6 @@ package com.keyiflerolsun
 
 import com.fasterxml.jackson.annotation.JsonProperty
 
-data class JWTPayload(
-    @JsonProperty("exp") 
-    val expiration: Long
-)
-
-data class AuthResponse(
-    @JsonProperty("token")
-    val accessToken: String,
-    @JsonProperty("expires_in") 
-    val expiresIn: Long? = null 
-)
-
 data class RecItem(
     @JsonProperty("id")          val id: Int,
     @JsonProperty("type")        val type: String?,
@@ -45,24 +33,24 @@ data class Trailer(
 )
 
 data class Source(
-    @JsonProperty("id")    val id:Int,
-    @JsonProperty("type")  val type:String,
-    @JsonProperty("url")   val url:String
+    @JsonProperty("id")    val id: Int,
+    @JsonProperty("type")  val type: String,
+    @JsonProperty("url")   val url: String
 )
 
 data class RecSearch(
-    @JsonProperty("channels") val channels:List<RecItem>? = emptyList(),
-    @JsonProperty("posters")  val posters:List<RecItem>?  = emptyList(),
+    @JsonProperty("channels") val channels: List<RecItem>? = emptyList(),
+    @JsonProperty("posters")  val posters: List<RecItem>?  = emptyList(),
 )
 
 data class RecDizi(
-    @JsonProperty("id")       val id:Int,
-    @JsonProperty("title")    val title:String,
-    @JsonProperty("episodes") val episodes:List<RecEpisode>,
+    @JsonProperty("id")       val id: Int,
+    @JsonProperty("title")    val title: String,
+    @JsonProperty("episodes") val episodes: List<RecEpisode>,
 )
 
 data class RecEpisode(
-    @JsonProperty("id")       val id:Int,
-    @JsonProperty("title")    val title:String,
+    @JsonProperty("id")       val id: Int,
+    @JsonProperty("title")    val title: String,
     @JsonProperty("sources")  val sources: List<Source>
 )
