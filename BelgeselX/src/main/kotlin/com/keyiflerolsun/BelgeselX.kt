@@ -226,7 +226,44 @@ class BelgeselX : MainAPI() {
             try {
                 val alternatifResp = app.get(iframeUrl, referer = refererUrl).text
                 
-                // Parse video files and labels inside sources object array
+                // 1. Check for iframe sources
+                val iframeSrcMatch = Regex("""<iframe[^>]+src=["']([^"']+)["']""").find(alternatifResp)
+                if (iframeSrcMatch != null) {
+                    var embedUrl = iframeSrcMatch.groupValues[1]
+                    if (embedUrl.startsWith("AF1Qip")) {
+                        embedUrl = "https://photos.google.com/share/$embedUrl"
+                    }
+                    
+                    if (embedUrl.contains("photos.google.com") || embedUrl.contains("googleusercontent.com")) {
+                        try {
+                            val photosPage = app.get(embedUrl).text
+                            val streamMatch = Regex(""""(https://video-downloads\.googleusercontent\.com/[^"]+)"""").find(photosPage)
+                            if (streamMatch != null) {
+                                val streamUrl = streamMatch.groupValues[1].replace("\\u003d", "=").replace("\\u0026", "&")
+                                callback.invoke(
+                                    newExtractorLink(
+                                        source = "GooglePhotos",
+                                        name = "GooglePhotos",
+                                        url = streamUrl,
+                                        type = ExtractorLinkType.VIDEO
+                                    ) {
+                                        this.referer = refererUrl
+                                        this.quality = Qualities.P720.value
+                                    }
+                                )
+                                linksFound = true
+                            }
+                        } catch (e: Exception) {
+                            Log.e("BLX", "Failed to resolve Google Photos stream: ${e.message}")
+                        }
+                    } else if (embedUrl.startsWith("http")) {
+                        if (loadExtractor(embedUrl, refererUrl, subtitleCallback, callback)) {
+                            linksFound = true
+                        }
+                    }
+                }
+
+                // 2. Parse video files and labels inside sources object array
                 Regex("""\{\s*["']?file["']?\s*:\s*["']([^"']+)["'](?:.*?["']?label["']?\s*:\s*["']([^"']+)["'])?""").findAll(alternatifResp).forEach {
                     val videoUrl = it.groupValues[1]
 

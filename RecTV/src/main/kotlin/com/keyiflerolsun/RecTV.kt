@@ -23,7 +23,7 @@ class RecTV : MainAPI() {
 
     private val swKey      = "4F5A9C3D9A86FA54EACEDDD635185/c3c5bd17-e37b-4b94-a944-8a3688a30452"
     private val hmacKey    = "3508611138826751fdf77beaa6f93eb93fd27e6a5acb910e7aad22665513dd6e"
-    private val appVersion = "110"
+    private val appVersion = "141"
     private val clientId   = "rectv-android"
 
     // ---- HMAC imzalama ----
@@ -38,13 +38,27 @@ class RecTV : MainAPI() {
         return mac.doFinal(message.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
 
-    private fun signedHeaders(method: String, path: String, body: String = ""): Map<String, String> {
+    private suspend fun getNonce(): String? {
+        return try {
+            val response = app.get(
+                "$mainUrl/api/attest/nonce",
+                headers = mapOf("User-Agent" to "googleusercontent")
+            )
+            AppUtils.tryParseJson<RecNonce>(response.text)?.nonce
+        } catch (e: Exception) {
+            Log.e("RCTV", "Failed to fetch nonce: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun signedHeaders(method: String, path: String, body: String = ""): Map<String, String> {
         val ts        = (System.currentTimeMillis() / 1000L).toString()
         val nonce     = UUID.randomUUID().toString()
         val bodyHash  = sha256Hex(body)
         val message   = "$method\n$path\n$ts\n$nonce\n$bodyHash"
         val signature = hmacSha256Hex(hmacKey, message)
-        return mapOf(
+        
+        val headers = mutableMapOf(
             "User-Agent"     to "googleusercontent",
             "Referer"        to "https://twitter.com/",
             "X-Timestamp"    to ts,
@@ -53,6 +67,12 @@ class RecTV : MainAPI() {
             "X-App-Version"  to appVersion,
             "X-Client-Id"    to clientId
         )
+
+        getNonce()?.let {
+            headers["Authorization"] = "Bearer $it"
+        }
+
+        return headers
     }
 
     override val mainPage = mainPageOf(

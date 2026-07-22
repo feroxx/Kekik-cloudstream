@@ -54,3 +54,7 @@ data class RecEpisode(
     @JsonProperty("title")    val title: String,
     @JsonProperty("sources")  val sources: List<Source>
 )
+
+data class RecNonce(
+    @JsonProperty("nonce")    val nonce: String
+)

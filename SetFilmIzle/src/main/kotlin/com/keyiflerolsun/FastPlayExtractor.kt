@@ -12,7 +12,8 @@ open class FastPlay : ExtractorApi() {
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val m3uLink = url.replace("/video/", "/manifests/") + "/master.txt"
+        val cleanUrl = url.substringBefore("?")
+        val m3uLink = cleanUrl.replace("/video/", "/manifests/") + "/master.txt"
 
         Log.d("Kekik_${this.name}", "Converted m3uLink » $m3uLink")
 
@@ -24,7 +25,7 @@ open class FastPlay : ExtractorApi() {
                 type    = ExtractorLinkType.M3U8
             ) {
                 quality = Qualities.Unknown.value
-                headers = mapOf("Referer" to url)
+                headers = mapOf("Referer" to cleanUrl)
             }
         )
     }
