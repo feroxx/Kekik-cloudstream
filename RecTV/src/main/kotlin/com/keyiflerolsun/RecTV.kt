@@ -14,7 +14,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 class RecTV : MainAPI() {
-    override var mainUrl              = "https://m.prectv50.sbs"
+    override var mainUrl              = "https://a.psrectv80.xyz"
     override var name                 = "RecTV"
     override val hasMainPage          = true
     override var lang                 = "tr"
