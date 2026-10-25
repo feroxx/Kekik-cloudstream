@@ -8,7 +8,7 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.nicehttp.NiceResponse
 
 class Sinewix : MainAPI() {
-    override var mainUrl = "https://ydfvfdizipanel.ru"
+    override var mainUrl = "https://ydfvfdizipanel.ru/login"
     override var name = "Sinewix"
     override val hasMainPage = true
     override var lang = "tr"
