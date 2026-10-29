@@ -2,7 +2,6 @@
 
 package com.keyiflerolsun
 
-import com.lagradost.api.Log
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -285,9 +284,6 @@ class Dizilla : MainAPI() {
 
             val apiUrl = sources.getJSONObject(0).getString("master")
 
-            Log.d("Pichive", "Master URL: $this.name")
-            Log.d("Pichive", "Video URL: $name")
-            Log.d("Pichive", "Video URL: $apiUrl")
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
