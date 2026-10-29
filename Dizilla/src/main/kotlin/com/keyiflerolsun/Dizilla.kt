@@ -2,6 +2,7 @@
 
 package com.keyiflerolsun
 
+import com.lagradost.api.Log
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -247,28 +248,21 @@ class Dizilla : MainAPI() {
                 )
             )
             val iframeHtml = iframeResponse.text
-            val subtitleRegex = Regex(
-                """"file"\s*:\s*"(https?:\\?/\\?/[^"]+\.vtt[^"]*)"\s*,\s*"label"\s*:\s*"([^"]+)""""
-            )
 
-            for (match in subtitleRegex.findAll(iframeHtml)) {
-                val rawUrl = match.groupValues[1]
-                val rawLang = match.groupValues[2]
+            val configJson = Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
+                .find(iframeHtml)
+                ?.groupValues
+                ?.get(1)
+                ?: return false
 
-                // JSON kaçışlarını çöz.
-                val subtitleUrl = rawUrl
-                    .replace("\\/", "/")
-                    .replace("\\u0026", "&")
-                    .replace("\\u002F", "/")
-                    .replace("\\u003F", "?")
-                    .replace("\\u003D", "=")
+            val config = org.json.JSONObject(configJson)
+            val subtitles = config.getJSONArray("subtitles")
 
-                // Unicode karakterlerini çöz: T\u00fcrk\u00e7e -> Türkçe
-                val subtitleLang = Regex("""\\u([0-9a-fA-F]{4})""")
-                    .replace(rawLang) { result ->
-                        result.groupValues[1].toInt(16).toChar().toString()
-                    }
-                    .replace("\\\"", "\"")
+            for (i in 0 until subtitles.length()) {
+                val subtitle = subtitles.getJSONObject(i)
+
+                val subtitleLang = subtitle.optString("label")
+                val subtitleUrl = subtitle.optString("url")
 
                 subtitleCallback.invoke(
                     newSubtitleFile(
@@ -276,7 +270,7 @@ class Dizilla : MainAPI() {
                         url = subtitleUrl)
                         {
                             this.headers = mapOf(
-                                "Referer" to response.url,
+                                "Referer" to iframeResponse.url,
                                 "User-Agent" to
                                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                                         "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -287,61 +281,22 @@ class Dizilla : MainAPI() {
             }
 
 
-            val value = Regex("""window\.openPlayer\('([^']*)'""")
-                .find(iframeHtml)
-                ?.groupValues
-                ?.get(1)
-                ?: continue
+            val sources = config.getJSONArray("sources")
 
-            val apiUrl = "https://four.pichive.online/source2.php?v=$value"
+            val apiUrl = sources.getJSONObject(0).getString("master")
 
-            val response = app.get(
-                apiUrl,
-                headers = mapOf(
-                    "Referer" to src,
-                    "X-Requested-With" to "XMLHttpRequest",
-                    "Accept" to "application/json, text/javascript, */*; q=0.01"
-                )
-            )
-
-            val json = response.parsedSafe<SourceResponse>()
-
-            val file = json?.playlist
-                ?.firstOrNull()
-                ?.sources
-                ?.firstOrNull()
-                ?.file
-                ?: return false
-
-            val m3u8Url = file.replace("m.php", "master.m3u8")
-
-            val playlistResponse = runCatching {
-                app.get(
-                    m3u8Url,
-                    headers = mapOf(
-                        "Referer" to iframeResponse.url,
-                        "User-Agent" to
-                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                "Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
-                    )
-                )
-            }.getOrNull()
-
-            val playlist = playlistResponse?.text.orEmpty()
-
+            Log.d("Pichive", "Master URL: $this.name")
+            Log.d("Pichive", "Video URL: $name")
+            Log.d("Pichive", "Video URL: $apiUrl")
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
                     name = name,
-                    url = if (playlist.isNotBlank() &&
-                        playlist.startsWith("#EXTM3U")
-                    ) m3u8Url else file,
+                    url = apiUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
                     headers = mapOf(
-                        "Referer" to response.url,
+                        "Referer" to iframeResponse.url,
                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
                         "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
                     )
@@ -351,23 +306,3 @@ class Dizilla : MainAPI() {
         return true;
     }
 }
-
-@kotlinx.serialization.Serializable
-data class SourceResponse(
-    val state: Boolean = false,
-    val expired: Boolean = false,
-    val playlist: List<PlaylistItem> = emptyList()
-)
-
-@kotlinx.serialization.Serializable
-data class PlaylistItem(
-    val sources: List<VideoSource> = emptyList(),
-    val title: String = ""
-)
-
-@kotlinx.serialization.Serializable
-data class VideoSource(
-    val file: String,
-    val type: String = "",
-    val title: String = ""
-)
