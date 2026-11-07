@@ -70,15 +70,20 @@ class MainUrlUpdater:
             headers = {
                 "X-Goog-Api-Key"    : "AIzaSyBbhpzG8Ecohu9yArfCO5tF13BQLhjLahc",
                 "X-Android-Package" : "com.rectv.shot",
+                "X-Android-Cert"    : "6b685da37410de2f1267621bfa618aa291943126",
                 "User-Agent"        : "Dalvik/2.1.0 (Linux; U; Android 12)",
             },
             json    = {
-                "appBuild"      : "81",
+                "appBuild"      : "110",
                 "appInstanceId" : "evON8ZdeSr-0wUYxf0qs68",
-                "appId"         : "1:791583031279:android:1",
+                "appId"         : "1:791583031279:android:244c3d507ab299fcabc01a",
             }
         )
-        return istek.json().get("entries", {}).get("api_url", "").replace("/api/", "")
+        entries = istek.json().get("entries", {})
+        api_url = (entries.get("api_url_son") or entries.get("api_url", "")).rstrip("/")
+        if api_url.endswith("/api"):
+            api_url = api_url[:-4]
+        return api_url
 
     def _golgetv_ver(self):
         istek = self.oturum.get("https://raw.githubusercontent.com/sevdaliyim/sevdaliyim/refs/heads/main/ssl2.key").text

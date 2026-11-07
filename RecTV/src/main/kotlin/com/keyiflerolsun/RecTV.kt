@@ -23,7 +23,7 @@ class RecTV : MainAPI() {
 
     private val swKey      = "4F5A9C3D9A86FA54EACEDDD635185/c3c5bd17-e37b-4b94-a944-8a3688a30452"
     private val hmacKey    = "3508611138826751fdf77beaa6f93eb93fd27e6a5acb910e7aad22665513dd6e"
-    private val appVersion = "141"
+    private val appVersion = "110"
     private val clientId   = "rectv-android"
 
     // ---- HMAC imzalama ----
