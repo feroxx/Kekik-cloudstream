@@ -53,52 +53,6 @@
            cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
            cp build/plugins.json $GITHUB_WORKSPACE/builds
 
-       - name: RecTV'yi Ekle
-         run: |
-           python3 - <<EOF
-           import json, os
-           
-           plugins_file = os.path.join(os.environ["GITHUB_WORKSPACE"], "builds", "plugins.json")
-           
-           rectv_entry = {
-               "url": "https://raw.githubusercontent.com/patr0nq/personal_cloudstream/builds/RecTV.cs3",
-               "status": 1,
-               "version": 113,
-               "name": "RecTV",
-               "internalName": "RecTV",
-               "authors": [
-                   "keyiflerolsun",
-                   "yusiqo",
-                   "inatchii",
-                   "JustRelaxable",
-                   "patr0n"
-               ],
-               "description": "RecTv APK, Türkiye'deki en popüler Çevrimiçi Medya Akış platformlarından biridir. Filmlerin, Canlı Sporların, Web Dizilerinin ve çok daha fazlasının keyfini ücretsiz çıkarın.",
-               "fileSize": 28846,
-               "repositoryUrl": "https://github.com/patr0nq/personal_cloudstream",
-               "language": "tr",
-               "tvTypes": ["Movie", "Live", "TvSeries"],
-               "iconUrl": "https://rectv.org.tr/wp-content/uploads/2024/11/rectv-modified.webp",
-               "apiVersion": 1,
-               "fileHash": "sha256-e04263fe93a131c4502fab15615735d6826580f99062f61dc2b062c0ce8976ab"
-           }
-           
-           try:
-               with open(plugins_file, "r", encoding="utf-8") as f:
-                   data = json.load(f)
-           except Exception:
-               data = []
-           
-           # eski RecTV girdilerini temizle
-           data = [p for p in data if p.get("internalName") != "RecTV"]
-           
-           # Yeni RecTV objesini ekle
-           data.append(rectv_entry)
-           
-           with open(plugins_file, "w", encoding="utf-8") as f:
-               json.dump(data, f, indent=4, ensure_ascii=False)
-           EOF
-
        - name: '@KekikAkademi ifadesini değiştir'
          run: |
            sed -i 's/@KekikAkademi/@feroxxcs3/g' $GITHUB_WORKSPACE/builds/repo.json
