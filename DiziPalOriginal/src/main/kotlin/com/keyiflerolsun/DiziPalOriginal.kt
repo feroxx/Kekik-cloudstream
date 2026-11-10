@@ -255,15 +255,27 @@ class DiziPalOriginal : MainAPI() {
 
         val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
-        // 1. AŞAMA: GET isteği atıp hem Token'ı hem de ÇEREZLERİ alıyoruz
-        val getResponse = app.get(
-            url = data,
-            headers = mapOf(
-                "User-Agent"    to userAgent,
-                "Cache-Control" to "no-cache",
-                "Pragma"        to "no-cache"
-            )
+        // ! Bölüm sayfaları, tarayıcı benzeri başlıklar olmadan "Doğrulama" (bot kontrolü) sayfası dönüyor
+        val browserHeaders = mapOf(
+            "User-Agent"                to userAgent,
+            "Accept"                    to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language"           to "tr-TR,tr;q=0.9,en;q=0.8",
+            "Sec-Fetch-Dest"            to "document",
+            "Sec-Fetch-Mode"            to "navigate",
+            "Sec-Fetch-Site"            to "none",
+            "Sec-Fetch-User"            to "?1",
+            "Upgrade-Insecure-Requests" to "1",
+            "Cache-Control"             to "no-cache",
+            "Pragma"                    to "no-cache"
         )
+
+        // 1. AŞAMA: GET isteği atıp hem Token'ı hem de ÇEREZLERİ alıyoruz
+        var getResponse = app.get(url = data, headers = browserHeaders)
+
+        if (getResponse.text.contains("_bc\" content=") || getResponse.document.title().contains("Doğrulama", true)) {
+            Log.w("DZP", "Bot kontrolü sayfası geldi, tekrar deneniyor..")
+            getResponse = app.get(url = data, headers = browserHeaders)
+        }
 
         val document = getResponse.document
         val configToken = document.selectFirst("#videoContainer")?.attr("data-cfg")?.trim()
@@ -346,7 +358,29 @@ class DiziPalOriginal : MainAPI() {
         }
 
         val embedUrl = fixUrl(embedUrlRaw)
-        Log.d("DZP", "Çözülen Embed URL » $embedUrl")
+        val configType = innerConfig.optString("t", "embed").lowercase()
+        Log.d("DZP", "Çözülen Embed URL » $embedUrl (tür: $configType)")
+
+        // * config "t" alanı m3u8/mp4 ise "v" doğrudan oynatılabilir adrestir
+        if (configType == "m3u8" || configType == "mp4") {
+            callback.invoke(
+                newExtractorLink(
+                    source = this.name,
+                    name   = "Dizipal (Ana Sunucu)",
+                    url    = embedUrl,
+                    type   = if (configType == "m3u8") ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    referer = data
+                    headers = mapOf(
+                        "User-Agent"     to userAgent,
+                        "Referer"        to data,
+                        "Sec-Fetch-Site" to "cross-site"
+                    )
+                    quality = Qualities.Unknown.value
+                }
+            )
+            return true
+        }
 
 
         if (embedUrl.contains("imagestoo")) {
@@ -411,8 +445,12 @@ class DiziPalOriginal : MainAPI() {
                         url = finalM3u8Url,
                         type = ExtractorLinkType.M3U8
                     ) {
-                        referer = mapOf("Referer" to embedUrl).toString()
-                        headers= mapOf("Cookie" to sessionCookie)
+                        referer = embedUrl
+                        headers = mapOf(
+                            "Cookie"         to sessionCookie,
+                            "Referer"        to embedUrl,
+                            "Sec-Fetch-Site" to "cross-site"
+                        )
                         quality = Qualities.Unknown.value
                     }
                 )
@@ -426,63 +464,78 @@ class DiziPalOriginal : MainAPI() {
             }
         }
 
-        val embedSource = app.get(
-            url = embedUrl,
+        // 3. AŞAMA: Embed sayfasından gerçek video kaynağını (m3u8 / mp4) çek
+        val embedHeaders = mapOf(
+            "User-Agent"      to userAgent,
+            "Accept"          to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
+        )
+
+        var embedSource = app.get(
+            url     = embedUrl,
             referer = data,
-            headers = mapOf("User-Agent" to userAgent)
+            headers = embedHeaders
         ).text
 
+        // * formationfeed.net gibi sağlayıcılar sadece kendi iframe'inden gelen isteklere izin veriyor
+        if (embedSource.contains("Attention Required", true) || embedSource.contains("cf.errors", true)) {
+            Log.w("DZP", "Embed sayfası Cloudflare'e takıldı, iframe başlıklarıyla tekrar deneniyor..")
+            embedSource = app.get(
+                url     = embedUrl,
+                headers = embedHeaders + mapOf(
+                    "Referer"        to data,
+                    "Sec-Fetch-Dest" to "iframe",
+                    "Sec-Fetch-Mode" to "navigate",
+                    "Sec-Fetch-Site" to "cross-site"
+                )
+            ).text
+        }
 
-        val m3u8Match = Regex("""sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.m3u8.*?)["']""").find(embedSource)
-            ?: Regex("""v\s*:\s*["']([^"']+\.html.*?)["']""").find(embedSource)
-
-        val extractedUrl = m3u8Match?.groupValues?.getOrNull(1)
-            ?: embedUrl.takeIf { it.contains("embed-") && it.contains(".html") }
+        val extractedUrl = Regex("""file\s*:\s*["']((?:https?:)?//[^"']+\.(?:m3u8|mp4)[^"']*)["']""")
+            .find(embedSource)?.groupValues?.getOrNull(1)
+            ?: Regex("""["']((?:https?:)?//[^"']+\.(?:m3u8|mp4)(?:\?[^"']*)?)["']""")
+                .find(embedSource)?.groupValues?.getOrNull(1)
 
         if (extractedUrl == null) {
-            Log.e("DZP", "Embed kaynağında geçerli bir link bulunamadı!")
+            Log.e("DZP", "Embed kaynağında geçerli bir video linki bulunamadı!")
             return false
         }
 
+        val finalM3u8Url = when {
+            extractedUrl.startsWith("//") -> "https:$extractedUrl"
+            extractedUrl.startsWith("http") -> extractedUrl
+            else -> "$embedUrl$extractedUrl"
+        }
+        Log.d("DZP", "Bulunan Video Kaynağı » $finalM3u8Url")
 
-        val finalM3u8Url = if (extractedUrl.contains(".html")) {
-            // URL'den sadece ID'yi (x6sctfgmyfws) güvenli bir şekilde ayıklıyoruz
-            // Örn: .../embed-x6sctfgmyfws.html -> x6sctfgmyfws
-            val idRegex = Regex("""embed-([^.]+)\.html""")
-            val idMatch = idRegex.find(extractedUrl)?.groupValues?.getOrNull(1)
+        // ! formationfeed CDN'i Referer + Sec-Fetch-Site olmadan 403 dönüyor
+        val embedReferer = runCatching {
+            val uri = java.net.URI(embedUrl)
+            "${uri.scheme}://${uri.host}/"
+        }.getOrNull() ?: "$mainUrl/"
 
-            if (idMatch != null) {
-                // İstenen formata göre string interpolation ile yeni URL'yi inşa ediyoruz
-                "https://s8.superadjacentsoddenly.xyz/hls2/01/00016/${idMatch}_,n,h,.urlset/master.m3u8"
-            } else {
-                Log.e("DZP", "HTML linkinden ID ayıklanamadı: $extractedUrl")
-                null
-            }
+        val streamHeaders = mapOf(
+            "User-Agent"     to userAgent,
+            "Referer"        to embedReferer,
+            "Origin"         to embedReferer.trimEnd('/'),
+            "Sec-Fetch-Site" to "cross-site"
+        )
+
+        val linkType = if (finalM3u8Url.contains(".m3u8", true)) {
+            ExtractorLinkType.M3U8
         } else {
-            // Eğer ilk regex'ten doğrudan m3u8 geldiyse olduğu gibi kullanıyoruz
-            extractedUrl
+            ExtractorLinkType.VIDEO
         }
-
-// 3. Son kontrol ve validation
-        if (finalM3u8Url == null) {
-            return false
-        }
-
-// Artık elimizde işlenmiş nihai m3u8 URL'si var
-        Log.d("DZP", "Başarıyla üretilen M3U8 URL: $finalM3u8Url")
-
-// Bundan sonraki stream ekleme veya return işlemlerini finalM3u8Url ile yapabilirsin.
-
-        Log.d("DZP", "Bulunan M3U8 » $finalM3u8Url")
 
         callback.invoke(
             newExtractorLink(
                 source = this.name,
-                name = "Dizipal (Ana Sunucu)",
-                url = finalM3u8Url,
-                type = ExtractorLinkType.M3U8
+                name   = "Dizipal (Ana Sunucu)",
+                url    = finalM3u8Url,
+                type   = linkType
             ) {
-                referer = embedUrl
+                referer = embedReferer
+                headers = streamHeaders
                 quality = Qualities.Unknown.value
             }
         )
@@ -504,10 +557,12 @@ class DiziPalOriginal : MainAPI() {
 
                 if (fileUrl != null && (fileUrl.endsWith(".vtt") || fileUrl.endsWith(".srt"))) {
                     subtitleCallback.invoke(
-                        SubtitleFile(
+                        newSubtitleFile(
                             lang = label,
-                            url = fixUrl(fileUrl)
-                        )
+                            url  = if (fileUrl.startsWith("//")) "https:$fileUrl" else fileUrl
+                        ) {
+                            headers = streamHeaders
+                        }
                     )
                 }
             }
