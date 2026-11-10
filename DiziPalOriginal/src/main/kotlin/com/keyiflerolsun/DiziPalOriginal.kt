@@ -13,7 +13,7 @@ import javax.crypto.spec.SecretKeySpec
 import android.util.Base64
 
 class DiziPalOriginal : MainAPI() {
-    override var mainUrl              = "https://dizipal2147.com"
+    override var mainUrl              = "https://dizipal2148.com"
     override var name                 = "DiziPalOriginal"
     override val hasMainPage          = true
     override var lang                 = "tr"
