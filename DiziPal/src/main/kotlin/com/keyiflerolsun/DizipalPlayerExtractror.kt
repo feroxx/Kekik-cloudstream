@@ -27,7 +27,7 @@ class DizipalPlayer : ExtractorApi() {
     ) {
         val defaultHeaders = mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer" to (referer ?: "https://dizipal1591.com/"),
+            "Referer" to (referer ?: "https://dizipal1595.com/"),
             "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
         )
 
@@ -38,9 +38,80 @@ class DizipalPlayer : ExtractorApi() {
             interceptor = cloudflareKiller
         ).text
 
+        val domainRegex = """https?://[^/]+""".toRegex()
+        val domain = domainRegex.find(url)?.value ?: "https://dplayer82.site"
+        val subUrls = mutableSetOf<String>()
+
+        // 1. Yeni NP_CONFIG formatı kontrolü
+        val npConfigMatch = Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});\s*window\.""", RegexOption.DOT_MATCHES_ALL).find(response)
+            ?: Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL).find(response)
+
+        if (npConfigMatch != null) {
+            try {
+                val jsonStr = npConfigMatch.groupValues[1]
+                val npJson = org.json.JSONObject(jsonStr)
+
+                // Altyazıları ayıkla
+                val subtitlesArr = npJson.optJSONArray("subtitles")
+                if (subtitlesArr != null) {
+                    for (i in 0 until subtitlesArr.length()) {
+                        val subObj = subtitlesArr.optJSONObject(i) ?: continue
+                        val subUrl = subObj.optString("url")
+                        val subLabel = subObj.optString("label", "Altyazı")
+                        if (subUrl.isNotEmpty() && subUrl !in subUrls) {
+                            subUrls.add(subUrl)
+                            subtitleCallback.invoke(
+                                newSubtitleFile(
+                                    lang = subLabel,
+                                    url = fixUrl(subUrl)
+                                ) {
+                                    headers = mapOf(
+                                        "Referer" to url,
+                                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Video kaynaklarını ayıkla
+                val sourcesArr = npJson.optJSONArray("sources")
+                if (sourcesArr != null) {
+                    for (i in 0 until sourcesArr.length()) {
+                        val srcObj = sourcesArr.optJSONObject(i) ?: continue
+                        var masterUrl = srcObj.optString("master")
+                        val title = srcObj.optString("title", "DPlayer")
+                        if (masterUrl.isNotEmpty()) {
+                            if (masterUrl.startsWith("//")) {
+                                masterUrl = "https:$masterUrl"
+                            }
+                            callback.invoke(
+                                newExtractorLink(
+                                    source = name,
+                                    name = "$name ($title)",
+                                    url = masterUrl,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    headers = mapOf(
+                                        "Origin" to domain,
+                                        "Referer" to url,
+                                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                                    )
+                                    Qualities.Unknown.value
+                                }
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("DiziPal", "--> NP_CONFIG parse hatası: ${e.message}")
+            }
+        }
+
+        // 2. Eski window.openPlayer formatı kontrolü
         val openPlayerRegex = """window\.openPlayer\s*\(\s*['"]([^'"]+)['"]""".toRegex()
 
-        val subUrls = mutableSetOf<String>()
         Regex(""""file":"((?:\\\\\"|[^"])+)","label":"((?:\\\\\"|[^"])+)"""").findAll(response).forEach {
             val (subUrlExt, subLangExt) = it.destructured
 
