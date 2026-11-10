@@ -51,26 +51,60 @@ class DizipalPlayer : ExtractorApi() {
                 val jsonStr = npConfigMatch.groupValues[1]
                 val npJson = org.json.JSONObject(jsonStr)
 
+                // Gate token hesaplama (404 hatasını engelleyen PoW doğrulaması)
+                val gateObj = npJson.optJSONObject("gate")
+                val gateN = gateObj?.optString("n")
+
+                val hasCustomGate = response.contains("NP_GATE")
+                val salt = if (hasCustomGate) {
+                    Regex("""String\.fromCharCode\(([\d,\s]+)\)""").find(response)?.let { match ->
+                        try {
+                            match.groupValues[1].split(",").map { it.trim().toInt().toChar() }.joinToString("")
+                        } catch (_: Exception) {
+                            null
+                        }
+                    } ?: "Lgj8415t4S"
+                } else {
+                    null
+                }
+                val gateB = gateObj?.optInt("b", 12) ?: 12
+                val defaultShift = 32 - gateB
+                val shift = Regex(""">>>\s*(\d+)""").find(response)?.groupValues?.get(1)?.toIntOrNull() ?: defaultShift
+
+                val token = if (!gateN.isNullOrEmpty()) {
+                    calculateGateToken(gateN, salt, shift)
+                } else {
+                    ""
+                }
+                Log.d("DiziPal", "--> Gate token hesaplandı: '$token' (gateN=$gateN, salt=$salt, shift=$shift)")
+
                 // Altyazıları ayıkla
                 val subtitlesArr = npJson.optJSONArray("subtitles")
                 if (subtitlesArr != null) {
                     for (i in 0 until subtitlesArr.length()) {
                         val subObj = subtitlesArr.optJSONObject(i) ?: continue
-                        val subUrl = subObj.optString("url")
+                        var subUrl = subObj.optString("url")
                         val subLabel = subObj.optString("label", "Altyazı")
-                        if (subUrl.isNotEmpty() && subUrl !in subUrls) {
-                            subUrls.add(subUrl)
-                            subtitleCallback.invoke(
-                                newSubtitleFile(
-                                    lang = subLabel,
-                                    url = fixUrl(subUrl)
-                                ) {
-                                    headers = mapOf(
-                                        "Referer" to url,
-                                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                                    )
-                                }
-                            )
+                        if (subUrl.isNotEmpty()) {
+                            if (token.isNotEmpty()) {
+                                val sep = if (subUrl.contains("?")) "&" else "?"
+                                subUrl += "${sep}p=$token"
+                            }
+                            if (subUrl !in subUrls) {
+                                subUrls.add(subUrl)
+                                subtitleCallback.invoke(
+                                    newSubtitleFile(
+                                        lang = subLabel,
+                                        url = fixUrl(subUrl)
+                                    ) {
+                                        this.headers = mapOf(
+                                            "Origin" to domain,
+                                            "Referer" to url,
+                                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -85,7 +119,17 @@ class DizipalPlayer : ExtractorApi() {
                         if (masterUrl.isNotEmpty()) {
                             if (masterUrl.startsWith("//")) {
                                 masterUrl = "https:$masterUrl"
+                            } else if (!masterUrl.startsWith("http")) {
+                                masterUrl = "$domain/$masterUrl".replace("//", "/").replace("https:/", "https://")
                             }
+
+                            if (token.isNotEmpty()) {
+                                val sep = if (masterUrl.contains("?")) "&" else "?"
+                                masterUrl += "${sep}p=$token"
+                            }
+
+                            Log.d("DiziPal", "--> Çözülen Master Video URL: $masterUrl")
+
                             callback.invoke(
                                 newExtractorLink(
                                     source = name,
@@ -93,12 +137,13 @@ class DizipalPlayer : ExtractorApi() {
                                     url = masterUrl,
                                     type = ExtractorLinkType.M3U8
                                 ) {
-                                    headers = mapOf(
+                                    this.referer = url
+                                    this.headers = mapOf(
                                         "Origin" to domain,
                                         "Referer" to url,
                                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                                     )
-                                    Qualities.Unknown.value
+                                    this.quality = Qualities.Unknown.value
                                 }
                             )
                         }
@@ -173,14 +218,45 @@ class DizipalPlayer : ExtractorApi() {
                             url = fileUrl,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            headers = mapOf("Origin" to domain, "Referer" to url)
-                            Qualities.Unknown.value
+                            this.referer = url
+                            this.headers = mapOf(
+                                "Origin" to domain,
+                                "Referer" to url,
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                            )
+                            this.quality = Qualities.Unknown.value
                         }
                     )
                 }
             } catch (e: Exception) {
                 Log.e("DiziPal", "--> DPlayer Extractor Hata: ${e.message}")
             }
+        }
+    }
+
+    private fun calculateGateToken(gateN: String, salt: String?, shift: Int): String {
+        return try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val prefix = if (salt != null) "$gateN:$salt:" else "$gateN:"
+            val prefixBytes = prefix.toByteArray(Charsets.UTF_8)
+
+            for (i in 0 until 10_000_000) {
+                md.reset()
+                md.update(prefixBytes)
+                md.update(i.toString().toByteArray(Charsets.UTF_8))
+                val digest = md.digest()
+                val firstInt = ((digest[0].toInt() and 0xFF) shl 24) or
+                               ((digest[1].toInt() and 0xFF) shl 16) or
+                               ((digest[2].toInt() and 0xFF) shl 8) or
+                               (digest[3].toInt() and 0xFF)
+                if ((firstInt ushr shift) == 0) {
+                    return i.toString()
+                }
+            }
+            ""
+        } catch (e: Exception) {
+            Log.e("DiziPal", "--> Gate token hesaplama hatası: ${e.message}")
+            ""
         }
     }
 }
