@@ -6,7 +6,6 @@ import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import okhttp3.Interceptor
 import java.security.MessageDigest
 import java.util.UUID
@@ -99,19 +98,25 @@ class RecTV : MainAPI() {
         val uri      = java.net.URI(url)
         val path     = uri.rawPath
         val headers  = signedHeaders("GET", path)
-        val home     = app.get(url, headers = headers)
+        val homeText = try {
+            app.get(url, headers = headers).text
+        } catch (e: Exception) {
+            Log.e("RCTV", "getMainPage fetch error: ${e.message}")
+            ""
+        }
 
-        val movies = AppUtils.tryParseJson<List<RecItem>>(home.text)!!.map { item ->
+        val movies = AppUtils.tryParseJson<List<RecItem>>(homeText)?.mapNotNull { item ->
+            val title = item.title ?: return@mapNotNull null
             val toDict = jacksonObjectMapper().writeValueAsString(item)
 
             if (item.label != "CANLI" && item.label != "Canlı") {
-                newMovieSearchResponse(item.title, toDict, TvType.Movie) { this.posterUrl = item.image }
+                newMovieSearchResponse(title, toDict, TvType.Movie) { this.posterUrl = item.image }
             } else {
-                newLiveSearchResponse(item.title, toDict, TvType.Live) {
+                newLiveSearchResponse(title, toDict, TvType.Live) {
                     this.posterUrl = item.image
                 }
             }
-        }
+        } ?: emptyList()
 
         return newHomePageResponse(request.name, movies)
     }
@@ -119,23 +124,26 @@ class RecTV : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val path    = "/api/search/${query}/${swKey}/"
         val headers = signedHeaders("GET", path)
-        val home    = app.get("${mainUrl}${path}", headers = headers)
+        val home    = try {
+            app.get("${mainUrl}${path}", headers = headers)
+        } catch (e: Exception) {
+            Log.e("RCTV", "search fetch error: ${e.message}")
+            return emptyList()
+        }
         val veriler = AppUtils.tryParseJson<RecSearch>(home.text)
 
         val sonuclar = mutableListOf<SearchResponse>()
 
-        veriler?.channels?.let { channels ->
-            for (item in channels) {
-                val toDict = jacksonObjectMapper().writeValueAsString(item)
-                sonuclar.add(newMovieSearchResponse(item.title, toDict, TvType.Movie) { this.posterUrl = item.image })
-            }
+        veriler?.channels?.forEach { item ->
+            val title = item.title ?: return@forEach
+            val toDict = jacksonObjectMapper().writeValueAsString(item)
+            sonuclar.add(newMovieSearchResponse(title, toDict, TvType.Movie) { this.posterUrl = item.image })
         }
 
-        veriler?.posters?.let { posters ->
-            for (item in posters) {
-                val toDict = jacksonObjectMapper().writeValueAsString(item)
-                sonuclar.add(newMovieSearchResponse(item.title, toDict, TvType.Movie) { this.posterUrl = item.image })
-            }
+        veriler?.posters?.forEach { item ->
+            val title = item.title ?: return@forEach
+            val toDict = jacksonObjectMapper().writeValueAsString(item)
+            sonuclar.add(newMovieSearchResponse(title, toDict, TvType.Movie) { this.posterUrl = item.image })
         }
 
         return sonuclar
@@ -145,53 +153,61 @@ class RecTV : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val veri = AppUtils.tryParseJson<RecItem>(url) ?: return null
+        val title = veri.title ?: return null
 
         if (veri.type == "serie") {
             val path     = "/api/season/by/serie/${veri.id}/${swKey}/"
             val headers  = signedHeaders("GET", path)
-            val diziReq  = app.get("${mainUrl}${path}", headers = headers)
+            val diziReq  = try {
+                app.get("${mainUrl}${path}", headers = headers)
+            } catch (e: Exception) {
+                Log.e("RCTV", "load serie error: ${e.message}")
+                return null
+            }
             val sezonlar = AppUtils.tryParseJson<List<RecDizi>>(diziReq.text) ?: return null
 
             val episodes = mutableMapOf<DubStatus, MutableList<Episode>>()
-
             val numberRegex = Regex("\\d+")
 
             for (sezon in sezonlar) {
-                val seasonDubStatus = if (sezon.title.contains("altyazı", ignoreCase = true)) DubStatus.Subbed
-                                      else if (sezon.title.contains("dublaj", ignoreCase = true)) DubStatus.Dubbed
+                val sTitle = sezon.title ?: ""
+                val seasonDubStatus = if (sTitle.contains("altyazı", ignoreCase = true)) DubStatus.Subbed
+                                      else if (sTitle.contains("dublaj", ignoreCase = true)) DubStatus.Dubbed
                                       else DubStatus.None
-                for (bolum in sezon.episodes) {
-                    episodes.getOrPut(seasonDubStatus) { mutableListOf() }.add(newEpisode(bolum.sources.first().url) {
-                        this.name        = bolum.title
-                        this.season      = numberRegex.find(sezon.title)?.value?.toIntOrNull()
-                        this.episode     = numberRegex.find(bolum.title)?.value?.toIntOrNull()
-                        this.description = sezon.title.substringAfter(".S ")
+                for (bolum in sezon.episodes ?: emptyList()) {
+                    val firstSource = bolum.sources?.firstOrNull()?.url ?: continue
+                    val epTitle = bolum.title ?: "Bölüm"
+                    episodes.getOrPut(seasonDubStatus) { mutableListOf() }.add(newEpisode(firstSource) {
+                        this.name        = epTitle
+                        this.season      = numberRegex.find(sTitle)?.value?.toIntOrNull()
+                        this.episode     = numberRegex.find(epTitle)?.value?.toIntOrNull()
+                        this.description = sTitle.substringAfter(".S ")
                         this.posterUrl   = veri.image
                     })
                 }
             }
 
-            return newAnimeLoadResponse(name = veri.title, url = url, type = TvType.TvSeries, comingSoonIfNone = false) {
+            return newAnimeLoadResponse(name = title, url = url, type = TvType.TvSeries, comingSoonIfNone = false) {
                 this.episodes = episodes.mapValues { it.value.toList() }.toMutableMap()
                 this.posterUrl = veri.image
                 this.plot      = veri.description
                 this.year      = veri.year
-                this.tags      = veri.genres?.map { it.title }
+                this.tags      = veri.genres?.mapNotNull { it.title }
             }
         }
 
         return if (veri.label != "CANLI" && veri.label != "Canlı") {
-            newMovieLoadResponse(veri.title, url, TvType.Movie, url) {
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = veri.image
                 this.plot      = veri.description
                 this.year      = veri.year
-                this.tags      = veri.genres?.map { it.title }
+                this.tags      = veri.genres?.mapNotNull { it.title }
             }
         } else {
-            newLiveStreamLoadResponse(veri.title, url, url) {
+            newLiveStreamLoadResponse(title, url, url) {
                 this.posterUrl = veri.image
                 this.plot      = veri.description
-                this.tags      = veri.genres?.map { it.title }
+                this.tags      = veri.genres?.mapNotNull { it.title }
             }
         }
     }
@@ -215,14 +231,16 @@ class RecTV : MainAPI() {
 
         val veri = AppUtils.tryParseJson<RecItem>(data) ?: return false
 
-        for (source in veri.sources) {
+        for (source in veri.sources ?: emptyList()) {
+            val sourceUrl = source.url ?: continue
+            val sourceType = source.type ?: "m3u8"
             Log.d("RCTV", "source » $source")
             callback.invoke(
                 newExtractorLink(
                     source  = this.name,
-                    name    = "${this.name} - ${source.type}",
-                    url     = source.url,
-                    type    = if (source.type == "mp4") ExtractorLinkType.VIDEO else ExtractorLinkType.M3U8
+                    name    = "${this.name} - ${sourceType}",
+                    url     = sourceUrl,
+                    type    = if (sourceType == "mp4") ExtractorLinkType.VIDEO else ExtractorLinkType.M3U8
                 ) {
                     referer = "https://twitter.com/"
                     quality = Qualities.Unknown.value
