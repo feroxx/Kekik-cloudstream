@@ -37,6 +37,23 @@ class DiziBox : MainAPI() {
     private val cloudflareKiller by lazy { CloudflareKiller() }
     private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller, userAgent) }
 
+    private val posterHeaders by lazy {
+        mapOf(
+            "User-Agent" to userAgent,
+            "Referer"    to "$mainUrl/",
+            "Cookie"     to baseCookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        )
+    }
+
+    private fun getImage(element: Element?): String? {
+        val img = element?.selectFirst("img.main-cover, img.wp-post-image, img.afis, figure img, img:not([class*='language'])")
+            ?: element?.selectFirst("img") ?: return null
+        val raw = img.attr("data-src").takeIf { it.isNotBlank() }
+            ?: img.attr("data-original").takeIf { it.isNotBlank() }
+            ?: img.attr("src").takeIf { it.isNotBlank() && !it.startsWith("data:") }
+        return fixUrlNull(raw)
+    }
+
     class CloudflareInterceptor(
         private val cloudflareKiller: CloudflareKiller,
         private val userAgent: String
@@ -96,7 +113,7 @@ class DiziBox : MainAPI() {
             cacheTime   = 60
         ).document
 
-        val home = document.select("article.detailed-article, article.article-episode-card a.figure-link")
+        val home = document.select("article.detailed-article, article.article-episode-card")
             .mapNotNull { it.toMainPageResult() }
 
         val isHorizontal = request.name.contains("Bölümler") || request.name.contains("Popüler")
@@ -104,16 +121,19 @@ class DiziBox : MainAPI() {
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val titleEl = this.selectFirst("h3 a")
-        val title   = titleEl?.text() ?: this.selectFirst("img")?.attr("alt") ?: return null
-        val imgEl   = this.selectFirst("img")
-        val imgUrl  = fixUrlNull(imgEl?.attr("src")?.takeIf { it.isNotBlank() } ?: imgEl?.attr("data-src"))
-        val href    = fixUrlNull(titleEl?.attr("href") ?: this.attr("href")) ?: return null
+        val titleEl = this.selectFirst("h3 a, a.episode-card-title, a.season-episode")
+        val title   = titleEl?.attr("title")?.takeIf { it.isNotBlank() }
+            ?: titleEl?.text()?.trim()
+            ?: this.selectFirst("img.main-cover, img.afis, img.wp-post-image, figure img, img")?.attr("alt")?.trim()
+            ?: return null
+        val imgUrl  = getImage(this)
+        val href    = fixUrlNull(titleEl?.attr("href") ?: this.selectFirst("a.figure-link")?.attr("href") ?: this.selectFirst("a")?.attr("href") ?: this.attr("href")) ?: return null
         val rating  = this.selectFirst("span.label-imdb b")?.text()?.trim()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            this.posterUrl = imgUrl
-            this.score     = Score.from10(rating)
+            this.posterUrl     = imgUrl
+            this.posterHeaders = posterHeaders
+            this.score         = Score.from10(rating)
         }
     }
 
@@ -135,15 +155,26 @@ class DiziBox : MainAPI() {
             cookies     = baseCookies,
             interceptor = interceptor
         )
-        if (!response.isSuccessful) return emptyList()
-
-        val json = tryParseJson<SearchApiResponse>(response.text) ?: return emptyList()
-        return json.results.mapNotNull { result ->
-            val thumbnail = result.attachmentThumbnail?.replace("50x50", "200x290")
-            newTvSeriesSearchResponse(result.postTitle, result.permalink, TvType.TvSeries) {
-                this.posterUrl = fixUrlNull(thumbnail)
+        if (response.isSuccessful) {
+            val json = tryParseJson<SearchApiResponse>(response.text)
+            if (json != null && json.results.isNotEmpty()) {
+                return json.results.mapNotNull { result ->
+                    val thumbnail = result.attachmentThumbnail?.replace("50x50", "200x290")
+                    newTvSeriesSearchResponse(result.postTitle, result.permalink, TvType.TvSeries) {
+                        this.posterUrl     = fixUrlNull(thumbnail)
+                        this.posterHeaders = posterHeaders
+                    }
+                }
             }
         }
+
+        val doc = app.get(
+            "$mainUrl/?s=$query",
+            cookies     = baseCookies,
+            interceptor = interceptor
+        ).document
+
+        return doc.select("article.detailed-article").mapNotNull { it.toMainPageResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -166,7 +197,7 @@ class DiziBox : MainAPI() {
         }
 
         val title    = document.selectFirst("div.tv-overview h1 a")?.text()?.trim() ?: return null
-        val poster   = fixUrlNull(document.selectFirst("div.tv-overview figure img")?.attr("src"))
+        val poster   = getImage(document.selectFirst("div.tv-overview figure"))?.replace("220x140", "200x290")?.replace("50x50", "200x290")
         val plot     = document.selectFirst("div.tv-story p")?.text()?.trim()
         val year     = document.selectFirst("a[href*='/yil/']")?.text()?.trim()?.toIntOrNull()
         val tags     = document.select("a[href*='/tur/']").map { it.text() }
@@ -221,11 +252,12 @@ class DiziBox : MainAPI() {
         val sortedEpisodes = episodeList.sortedWith(compareBy({ it.season }, { it.episode }))
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, sortedEpisodes) {
-            this.posterUrl = poster
-            this.plot      = plot
-            this.year      = year
-            this.tags      = tags
-            this.score     = Score.from10(rating)
+            this.posterUrl     = poster
+            this.posterHeaders = posterHeaders
+            this.plot          = plot
+            this.year          = year
+            this.tags          = tags
+            this.score         = Score.from10(rating)
             addActors(actors)
             addTrailer(trailer)
         }
