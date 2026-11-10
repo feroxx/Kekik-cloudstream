@@ -1,6 +1,5 @@
 package com.keyiflerolsun
 
-import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
@@ -24,42 +23,21 @@ class RapidExtractor : ExtractorApi() {
         Log.d(name, "Raw HTML uzunluğu: ${rawHtml.length}")
 
         var videoUrl: String? = null
-        val unpackedJs = unpackPackerJs(rawHtml)
+        val host = runCatching { java.net.URI(url).host }.getOrNull() ?: "rapid.filmmakinesi.to"
+
+        val unpackedJs = EmbedDecoder.unpackPackerJs(rawHtml)
         if (unpackedJs != null) {
             Log.d(name, "JS unpack edildi, uzunluk: ${unpackedJs.length}")
-
-            val varPattern = Regex(
-                """(?:var|let|const)\s+(\w+)\s*=\s*(\w+)\s*\(\s*\[(.*?)\]\s*\)""",
-                RegexOption.DOT_MATCHES_ALL
-            )
-            val varMatch = varPattern.find(unpackedJs)
-
-            if (varMatch != null) {
-                val varName = varMatch.groupValues[1]
-                val funcName = varMatch.groupValues[2]
-                val partsStr = varMatch.groupValues[3]
-
-                val parts = Regex(""""([^"]*)"""").findAll(partsStr).map {
-                    it.groupValues[1].replace("\\/", "/").replace("\\\"", "\"")
-                }.toList()
-
-                Log.d(name, "Dinamik bulundu: var=$varName, func=$funcName, parts=${parts.size}")
-
-                val funcBody = extractFuncBody(unpackedJs, funcName)
-                if (funcBody != null) {
-                    Log.d(name, "Fonksiyon body bulundu, uzunluk: ${funcBody.length}")
-                    videoUrl = parseAndExecuteJs(funcBody, parts)
-                    Log.d(name, "Dinamik çözülen URL: $videoUrl")
-                }
-            } else {
-                Log.w(name, "Unpack edilmiş JS'te var X = Y([...]) bulunamadı")
-            }
         } else {
             Log.w(name, "Packed JS bulunamadı veya unpack edilemedi")
         }
+
+        videoUrl = EmbedDecoder.extractVideoUrl(rawHtml, unpackedJs, host)
+        Log.d(name, "Dinamik çözülen URL: $videoUrl")
+
         if (videoUrl.isNullOrBlank()) {
             val jsonLdMatch = Regex(""""contentUrl"\s*:\s*"([^"]+)"""").find(rawHtml)
-            videoUrl = jsonLdMatch?.groupValues?.get(1)?.replace(".txt", ".m3u8")
+            videoUrl = jsonLdMatch?.groupValues?.get(1)?.replace("\\/", "/")
             Log.d(name, "Fallback JSON-LD: $videoUrl")
         }
         if (videoUrl.isNullOrBlank()) {
@@ -101,182 +79,7 @@ class RapidExtractor : ExtractorApi() {
         )
         Log.d(name, "ExtractorLink eklendi: $videoUrl")
     }
-    private fun unpackPackerJs(rawHtml: String): String? {
-        return try {
-            val startMarker = "eval(function(p,a,c,k,e,d){"
-            val endMarker = ",0,{}))"
 
-            val startIdx = rawHtml.indexOf(startMarker)
-            if (startIdx == -1) return null
-
-            val endIdx = rawHtml.indexOf(endMarker, startIdx + startMarker.length)
-            if (endIdx == -1) return null
-
-            val block = rawHtml.substring(startIdx, endIdx + endMarker.length)
-            val packedStart = block.indexOf("}('") + 3
-            val packedEnd = block.indexOf("',", packedStart)
-            if (packedStart == -1 || packedEnd == -1) return null
-            val packed = block.substring(packedStart, packedEnd)
-            val afterPacked = block.substring(packedEnd + 2)
-            val baseEnd = afterPacked.indexOf(",")
-            if (baseEnd == -1) return null
-            val base = afterPacked.substring(0, baseEnd).toInt()
-            val afterBase = afterPacked.substring(baseEnd + 1)
-            val countEnd = afterBase.indexOf(",")
-            if (countEnd == -1) return null
-            val count = afterBase.substring(0, countEnd).toInt()
-            val dictQuoteStart = afterBase.indexOf("'") + 1
-            val dictQuoteEnd = afterBase.indexOf("'.split", dictQuoteStart)
-            if (dictQuoteStart == -1 || dictQuoteEnd == -1) return null
-            val dictStr = afterBase.substring(dictQuoteStart, dictQuoteEnd)
-
-            Log.d(name, "Packer: base=$base, count=$count, dict=${dictStr.length}, packed=${packed.length}")
-
-            val dictionary = dictStr.split('|')
-            val lookup = mutableMapOf<String, String>()
-
-            var c = count - 1
-            while (c >= 0) {
-                val key = packerEncode(c, base)
-                lookup[key] = if (c < dictionary.size && dictionary[c].isNotEmpty()) {
-                    dictionary[c]
-                } else {
-                    key
-                }
-                c--
-            }
-
-            var result = packed
-            val sortedKeys = lookup.keys.sortedByDescending { it.length }
-            for (key in sortedKeys) {
-                val value = lookup[key]!!
-                result = result.replace(Regex("\\b${Regex.escape(key)}\\b"), value)
-            }
-
-            result
-        } catch (e: Exception) {
-            Log.e(name, "Unpack hatası: ${e.message}")
-            null
-        }
-    }
-
-    private fun packerEncode(num: Int, base: Int): String {
-        val digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        if (num == 0) return "0"
-        var n = num
-        val sb = StringBuilder()
-        while (n > 0) {
-            sb.insert(0, digits[n % base])
-            n /= base
-        }
-        return sb.toString()
-    }
-    private fun parseAndExecuteJs(funcBody: String, parts: List<String>): String? {
-        return try {
-            val seedMatch = Regex(
-                """var\s+(\w+)\s*=\s*"([^"]+)"\s*;\s*var\s+(\w+)\s*=\s*"([^"]+)""""
-            ).find(funcBody) ?: run {
-                Log.w(name, "Seed/ops string'leri bulunamadı")
-                return null
-            }
-            val seedStr = seedMatch.groupValues[2]
-            val opsStr = seedMatch.groupValues[4]
-            Log.d(name, "Seed: '$seedStr', Ops: '$opsStr'")
-
-            var u3e = parts.joinToString("")
-            var gzx1 = 0
-            var mff = 0
-            for (i in seedStr.indices) {
-                val ngm = seedStr[i].code
-                gzx1 = (gzx1 * 31 + ngm) % 251
-                mff = (mff xor (ngm + i)) and 255
-            }
-            val ghihx = (gzx1 + mff) % 256
-            val cv1 = (gzx1 % 13) + 3
-            var pzvvv = ((gzx1 * 256 + mff) % 65521) + 1
-            Log.d(name, "ghihx=$ghihx, cv1=$cv1, pzvvv=$pzvvv")
-            for (i in opsStr.length - 1 downTo 0) {
-                val ch = opsStr[i]
-                u3e = when (ch) {
-                    'b' -> atob(u3e)
-                    'v' -> u3e.reversed()
-                    else -> {
-                        val oufo = (26 - ((ch.code - 64) % 26)) % 26
-                        caesarShift(u3e, oufo)
-                    }
-                }
-            }
-            Log.d(name, "Operasyonlar sonrası uzunluk: ${u3e.length}")
-            val imm = u3e.length
-            if (imm > 1) {
-                val irdt = IntArray(imm)
-                for (sm7 in imm - 1 downTo 1) {
-                    pzvvv = (pzvvv * 75 + 74) % 65537
-                    irdt[sm7] = pzvvv % (sm7 + 1)
-                }
-                val arr = u3e.toCharArray()
-                for (sm7 in 1 until imm) {
-                    val j = irdt[sm7]
-                    val tmp = arr[sm7]
-                    arr[sm7] = arr[j]
-                    arr[j] = tmp
-                }
-                u3e = String(arr)
-            }
-            val sb = StringBuilder(imm)
-            var to4 = ghihx
-            for (c in u3e) {
-                val ngm = c.code
-                to4 = (to4 + cv1) % 256
-                sb.append((ngm xor to4).toChar())
-                to4 = (to4 + ngm) % 256
-            }
-
-            val result = sb.toString()
-            Log.d(name, "Çözülen değer: ${result.take(200)}")
-            result.trim().takeIf { it.startsWith("http") }
-        } catch (e: Exception) {
-            Log.e(name, "JS Parser hatası: ${e.message}")
-            null
-        }
-    }
-    private fun atob(s: String): String {
-        var str = s.trim()
-        val padding = 4 - str.length % 4
-        if (padding != 4) str += "=".repeat(padding)
-        return Base64.decode(str, Base64.DEFAULT).toString(Charsets.ISO_8859_1)
-    }
-
-    private fun btoa(s: String): String {
-        return Base64.encodeToString(s.toByteArray(Charsets.ISO_8859_1), Base64.DEFAULT).trim()
-    }
-
-    private fun caesarShift(text: String, shift: Int): String {
-        return text.map { c ->
-            when {
-                c in 'A'..'Z' -> ((c.code - 'A'.code + shift) % 26 + 'A'.code).toChar()
-                c in 'a'..'z' -> ((c.code - 'a'.code + shift) % 26 + 'a'.code).toChar()
-                else -> c
-            }
-        }.joinToString("")
-    }
-
-    private fun extractFuncBody(jsCode: String, funcName: String): String? {
-        val startIdx = jsCode.indexOf("function $funcName")
-        if (startIdx == -1) return null
-        val braceIdx = jsCode.indexOf('{', startIdx)
-        if (braceIdx == -1) return null
-        var braceCount = 1
-        var i = braceIdx + 1
-        while (braceCount > 0 && i < jsCode.length) {
-            when (jsCode[i]) {
-                '{' -> braceCount++
-                '}' -> braceCount--
-            }
-            i++
-        }
-        return if (braceCount == 0) jsCode.substring(braceIdx + 1, i - 1) else null
-    }
     private suspend fun parseSubtitles(
         rawHtml: String,
         subtitleCallback: (SubtitleFile) -> Unit
