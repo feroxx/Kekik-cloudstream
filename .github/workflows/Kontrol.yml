@@ -29,10 +29,10 @@ jobs:
       - name : Depo Kontrolü
         uses : actions/checkout@v4
 
-      - name : Python 3.11.8 Yükle
+      - name : Python 3.15.2 Yükle
         uses : actions/setup-python@v5
         with :
-          python-version: 3.11.8
+          python-version: 3.15.2
 
       - name : Python Sürümünü Göster
         run  : python -c "import sys; print(sys.version)"
