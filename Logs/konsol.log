@@ -1,0 +1,76 @@
+2026-11-19 18:11:34,138 | [~] Kontrol Ediliyor : AnimeciX
+2026-11-19 18:11:34,254 | [+] Kontrol Edildi   : https://animecix.tv
+2026-11-19 18:11:34,255 | [~] Kontrol Ediliyor : AsyaAnimeleri
+2026-11-19 18:11:34,815 | [+] Kontrol Edildi   : https://asyaanimeleri.top
+2026-11-19 18:11:34,816 | [~] Kontrol Ediliyor : BelgeselX
+2026-11-19 18:13:49,096 | [!] Kontrol Edilemedi : https://belgeselx.com
+2026-11-19 18:13:49,096 | [!] ConnectTimeout : HTTPSConnectionPool(host='belgeselx.com', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<HTTPSConnection(host='belgeselx.com', port=443) at 0x706ef64eafd0>, 'Connection to belgeselx.com timed out. (connect timeout=None)'))
+2026-11-19 18:13:49,097 | [~] Kontrol Ediliyor : CizgiMax
+2026-11-19 18:13:49,272 | [+] Kontrol Edildi   : https://cizgimax.online
+2026-11-19 18:13:49,273 | [~] Kontrol Ediliyor : DiziBox
+2026-11-19 18:13:49,806 | [+] Kontrol Edildi   : https://www.dizibox.live
+2026-11-19 18:13:49,806 | [~] Kontrol Ediliyor : DiziKorea
+2026-11-19 18:13:50,512 | [+] Kontrol Edildi   : https://dizikorea3.com
+2026-11-19 18:13:50,513 | [~] Kontrol Ediliyor : DiziMom
+2026-11-19 18:13:51,656 | [+] Kontrol Edildi   : https://www.dizidad.com
+2026-11-19 18:13:51,656 | [~] Kontrol Ediliyor : DiziPal
+2026-11-19 18:13:51,875 | [+] Kontrol Edildi   : https://dizipal1595.com
+2026-11-19 18:13:51,877 | [»] https://dizipal1595.com -> https://dizipal1596.com
+2026-11-19 18:13:51,877 | [~] Kontrol Ediliyor : DiziPalOriginal
+2026-11-19 18:13:52,838 | [+] Kontrol Edildi   : https://dizipal2149.com
+2026-11-19 18:13:52,840 | [»] https://dizipal2149.com -> https://dizipal2150.com
+2026-11-19 18:13:52,840 | [~] Kontrol Ediliyor : DiziPod
+2026-11-19 18:13:53,202 | [+] Kontrol Edildi   : https://dizipod.com
+2026-11-19 18:13:53,202 | [~] Kontrol Ediliyor : DiziYou
+2026-11-19 18:13:53,335 | [+] Kontrol Edildi   : https://www.diziyou.one
+2026-11-19 18:13:53,336 | [~] Kontrol Ediliyor : Dizilla
+2026-11-19 18:13:53,380 | [+] Kontrol Edildi   : https://dizilla.la
+2026-11-19 18:13:53,380 | [~] Kontrol Ediliyor : FilmMakinesi
+2026-11-19 18:13:53,557 | [+] Kontrol Edildi   : https://filmmakinesi.to
+2026-11-19 18:13:53,558 | [~] Kontrol Ediliyor : FilmModu
+2026-11-19 18:13:53,748 | [+] Kontrol Edildi   : https://www.filmmodu.one
+2026-11-19 18:13:53,748 | [~] Kontrol Ediliyor : FullHDFilm
+2026-11-19 18:13:54,924 | [+] Kontrol Edildi   : https://hdfilm.us
+2026-11-19 18:13:54,925 | [~] Kontrol Ediliyor : FullHDFilmizlesene
+2026-11-19 18:13:55,211 | [+] Kontrol Edildi   : https://www.fullhdfilmizlesene.now
+2026-11-19 18:13:55,211 | [~] Kontrol Ediliyor : HDFilmCehennemi
+2026-11-19 18:13:55,313 | [+] Kontrol Edildi   : https://www.hdfilmcehennemi.nl
+2026-11-19 18:13:55,314 | [~] Kontrol Ediliyor : HDFilmDelisi
+2026-11-19 18:13:55,316 | [!] Kontrol Edilemedi : None
+2026-11-19 18:13:55,316 | [!] MissingSchema : Invalid URL 'None': No scheme supplied. Perhaps you meant https://None?
+2026-11-19 18:13:55,317 | [~] Kontrol Ediliyor : InatBox
+2026-11-19 18:13:55,317 | [!] Kontrol Edilemedi : None
+2026-11-19 18:13:55,318 | [!] MissingSchema : Invalid URL 'None': No scheme supplied. Perhaps you meant https://None?
+2026-11-19 18:13:55,318 | [~] Kontrol Ediliyor : JetFilmizle
+2026-11-19 18:13:55,942 | [+] Kontrol Edildi   : https://jetfilmizle.app
+2026-11-19 18:13:55,943 | [~] Kontrol Ediliyor : KultFilmler
+2026-11-19 18:13:56,315 | [+] Kontrol Edildi   : https://kultfilmler.net
+2026-11-19 18:13:56,316 | [~] Kontrol Ediliyor : RareFilmm
+2026-11-19 18:13:56,881 | [+] Kontrol Edildi   : https://rarefilmm.com
+2026-11-19 18:13:56,881 | [~] Kontrol Ediliyor : RecTV
+2026-11-19 18:13:57,034 | [+] Kontrol Edildi   : https://a.psrectv80.xyz
+2026-11-19 18:13:57,034 | [~] Kontrol Ediliyor : SelcukFlix
+2026-11-19 18:13:57,455 | [+] Kontrol Edildi   : https://selcukflix.app
+2026-11-19 18:13:57,455 | [~] Kontrol Ediliyor : SetFilmIzle
+2026-11-19 18:13:57,656 | [+] Kontrol Edildi   : https://www.setfilmizle.ltd
+2026-11-19 18:13:57,656 | [~] Kontrol Ediliyor : SezonlukDizi
+2026-11-19 18:13:58,328 | [+] Kontrol Edildi   : https://sezonlukdizi.cc
+2026-11-19 18:13:58,329 | [~] Kontrol Ediliyor : SinemaCX
+2026-11-19 18:13:59,009 | [+] Kontrol Edildi   : https://sinemacc.com
+2026-11-19 18:13:59,010 | [~] Kontrol Ediliyor : Sinewix
+2026-11-19 18:13:59,268 | [+] Kontrol Edildi   : https://ydfvfdizipanel.ru
+2026-11-19 18:13:59,269 | [~] Kontrol Ediliyor : TLCtr
+2026-11-19 18:13:59,806 | [+] Kontrol Edildi   : https://www.tlctv.com.tr
+2026-11-19 18:13:59,807 | [~] Kontrol Ediliyor : TRanimaci
+2026-11-19 18:14:00,038 | [+] Kontrol Edildi   : https://tranimaci.com
+2026-11-19 18:14:00,039 | [~] Kontrol Ediliyor : TRasyalog
+2026-11-19 18:14:00,317 | [!] Kontrol Edilemedi : https://asyalog.co
+2026-11-19 18:14:00,318 | [!] SSLError : HTTPSConnectionPool(host='asyalog.co', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'asyalog.co'. (_ssl.c:1147)")))
+2026-11-19 18:14:00,318 | [~] Kontrol Ediliyor : TurkAnime
+2026-11-19 18:14:00,355 | [+] Kontrol Edildi   : https://www.turkanime.tv
+2026-11-19 18:14:00,356 | [~] Kontrol Ediliyor : Watch2Movies
+2026-11-19 18:14:00,699 | [+] Kontrol Edildi   : https://movies2watch.watch
+2026-11-19 18:14:00,700 | [~] Kontrol Ediliyor : WebdramaTurkey2
+2026-11-19 18:14:00,912 | [+] Kontrol Edildi   : https://webdramaturkey2.com
+2026-11-19 18:14:00,913 | [~] Kontrol Ediliyor : WebteIzle
+2026-11-19 18:14:01,233 | [+] Kontrol Edildi   : https://webteizle.info

@@ -1,0 +1,76 @@
+{"ts": "2026-11-19T18:11:34.138634+00:00", "text": "[~] Kontrol Ediliyor : AnimeciX"}
+{"ts": "2026-11-19T18:11:34.254919+00:00", "text": "[+] Kontrol Edildi   : https://animecix.tv"}
+{"ts": "2026-11-19T18:11:34.255316+00:00", "text": "[~] Kontrol Ediliyor : AsyaAnimeleri"}
+{"ts": "2026-11-19T18:11:34.816288+00:00", "text": "[+] Kontrol Edildi   : https://asyaanimeleri.top"}
+{"ts": "2026-11-19T18:11:34.816519+00:00", "text": "[~] Kontrol Ediliyor : BelgeselX"}
+{"ts": "2026-11-19T18:13:49.096213+00:00", "text": "[!] Kontrol Edilemedi : https://belgeselx.com"}
+{"ts": "2026-11-19T18:13:49.096983+00:00", "text": "[!] ConnectTimeout : HTTPSConnectionPool(host='belgeselx.com', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<HTTPSConnection(host='belgeselx.com', port=443) at 0x706ef64eafd0>, 'Connection to belgeselx.com timed out. (connect timeout=None)'))"}
+{"ts": "2026-11-19T18:13:49.097177+00:00", "text": "[~] Kontrol Ediliyor : CizgiMax"}
+{"ts": "2026-11-19T18:13:49.273344+00:00", "text": "[+] Kontrol Edildi   : https://cizgimax.online"}
+{"ts": "2026-11-19T18:13:49.273703+00:00", "text": "[~] Kontrol Ediliyor : DiziBox"}
+{"ts": "2026-11-19T18:13:49.806258+00:00", "text": "[+] Kontrol Edildi   : https://www.dizibox.live"}
+{"ts": "2026-11-19T18:13:49.806843+00:00", "text": "[~] Kontrol Ediliyor : DiziKorea"}
+{"ts": "2026-11-19T18:13:50.513367+00:00", "text": "[+] Kontrol Edildi   : https://dizikorea3.com"}
+{"ts": "2026-11-19T18:13:50.513694+00:00", "text": "[~] Kontrol Ediliyor : DiziMom"}
+{"ts": "2026-11-19T18:13:51.656788+00:00", "text": "[+] Kontrol Edildi   : https://www.dizidad.com"}
+{"ts": "2026-11-19T18:13:51.656996+00:00", "text": "[~] Kontrol Ediliyor : DiziPal"}
+{"ts": "2026-11-19T18:13:51.875879+00:00", "text": "[+] Kontrol Edildi   : https://dizipal1595.com"}
+{"ts": "2026-11-19T18:13:51.877832+00:00", "text": "[»] https://dizipal1595.com -> https://dizipal1596.com"}
+{"ts": "2026-11-19T18:13:51.878018+00:00", "text": "[~] Kontrol Ediliyor : DiziPalOriginal"}
+{"ts": "2026-11-19T18:13:52.838748+00:00", "text": "[+] Kontrol Edildi   : https://dizipal2149.com"}
+{"ts": "2026-11-19T18:13:52.840284+00:00", "text": "[»] https://dizipal2149.com -> https://dizipal2150.com"}
+{"ts": "2026-11-19T18:13:52.841114+00:00", "text": "[~] Kontrol Ediliyor : DiziPod"}
+{"ts": "2026-11-19T18:13:53.202703+00:00", "text": "[+] Kontrol Edildi   : https://dizipod.com"}
+{"ts": "2026-11-19T18:13:53.202902+00:00", "text": "[~] Kontrol Ediliyor : DiziYou"}
+{"ts": "2026-11-19T18:13:53.336408+00:00", "text": "[+] Kontrol Edildi   : https://www.diziyou.one"}
+{"ts": "2026-11-19T18:13:53.336621+00:00", "text": "[~] Kontrol Ediliyor : Dizilla"}
+{"ts": "2026-11-19T18:13:53.380251+00:00", "text": "[+] Kontrol Edildi   : https://dizilla.la"}
+{"ts": "2026-11-19T18:13:53.380955+00:00", "text": "[~] Kontrol Ediliyor : FilmMakinesi"}
+{"ts": "2026-11-19T18:13:53.558228+00:00", "text": "[+] Kontrol Edildi   : https://filmmakinesi.to"}
+{"ts": "2026-11-19T18:13:53.558585+00:00", "text": "[~] Kontrol Ediliyor : FilmModu"}
+{"ts": "2026-11-19T18:13:53.748637+00:00", "text": "[+] Kontrol Edildi   : https://www.filmmodu.one"}
+{"ts": "2026-11-19T18:13:53.748985+00:00", "text": "[~] Kontrol Ediliyor : FullHDFilm"}
+{"ts": "2026-11-19T18:13:54.924921+00:00", "text": "[+] Kontrol Edildi   : https://hdfilm.us"}
+{"ts": "2026-11-19T18:13:54.925637+00:00", "text": "[~] Kontrol Ediliyor : FullHDFilmizlesene"}
+{"ts": "2026-11-19T18:13:55.211242+00:00", "text": "[+] Kontrol Edildi   : https://www.fullhdfilmizlesene.now"}
+{"ts": "2026-11-19T18:13:55.211455+00:00", "text": "[~] Kontrol Ediliyor : HDFilmCehennemi"}
+{"ts": "2026-11-19T18:13:55.313509+00:00", "text": "[+] Kontrol Edildi   : https://www.hdfilmcehennemi.nl"}
+{"ts": "2026-11-19T18:13:55.315301+00:00", "text": "[~] Kontrol Ediliyor : HDFilmDelisi"}
+{"ts": "2026-11-19T18:13:55.316135+00:00", "text": "[!] Kontrol Edilemedi : None"}
+{"ts": "2026-11-19T18:13:55.317290+00:00", "text": "[!] MissingSchema : Invalid URL 'None': No scheme supplied. Perhaps you meant https://None?"}
+{"ts": "2026-11-19T18:13:55.317499+00:00", "text": "[~] Kontrol Ediliyor : InatBox"}
+{"ts": "2026-11-19T18:13:55.318169+00:00", "text": "[!] Kontrol Edilemedi : None"}
+{"ts": "2026-11-19T18:13:55.318314+00:00", "text": "[!] MissingSchema : Invalid URL 'None': No scheme supplied. Perhaps you meant https://None?"}
+{"ts": "2026-11-19T18:13:55.318627+00:00", "text": "[~] Kontrol Ediliyor : JetFilmizle"}
+{"ts": "2026-11-19T18:13:55.942793+00:00", "text": "[+] Kontrol Edildi   : https://jetfilmizle.app"}
+{"ts": "2026-11-19T18:13:55.943170+00:00", "text": "[~] Kontrol Ediliyor : KultFilmler"}
+{"ts": "2026-11-19T18:13:56.315857+00:00", "text": "[+] Kontrol Edildi   : https://kultfilmler.net"}
+{"ts": "2026-11-19T18:13:56.316243+00:00", "text": "[~] Kontrol Ediliyor : RareFilmm"}
+{"ts": "2026-11-19T18:13:56.881675+00:00", "text": "[+] Kontrol Edildi   : https://rarefilmm.com"}
+{"ts": "2026-11-19T18:13:56.882039+00:00", "text": "[~] Kontrol Ediliyor : RecTV"}
+{"ts": "2026-11-19T18:13:57.034360+00:00", "text": "[+] Kontrol Edildi   : https://a.psrectv80.xyz"}
+{"ts": "2026-11-19T18:13:57.035114+00:00", "text": "[~] Kontrol Ediliyor : SelcukFlix"}
+{"ts": "2026-11-19T18:13:57.455314+00:00", "text": "[+] Kontrol Edildi   : https://selcukflix.app"}
+{"ts": "2026-11-19T18:13:57.456069+00:00", "text": "[~] Kontrol Ediliyor : SetFilmIzle"}
+{"ts": "2026-11-19T18:13:57.656765+00:00", "text": "[+] Kontrol Edildi   : https://www.setfilmizle.ltd"}
+{"ts": "2026-11-19T18:13:57.657118+00:00", "text": "[~] Kontrol Ediliyor : SezonlukDizi"}
+{"ts": "2026-11-19T18:13:58.329019+00:00", "text": "[+] Kontrol Edildi   : https://sezonlukdizi.cc"}
+{"ts": "2026-11-19T18:13:58.329814+00:00", "text": "[~] Kontrol Ediliyor : SinemaCX"}
+{"ts": "2026-11-19T18:13:59.009854+00:00", "text": "[+] Kontrol Edildi   : https://sinemacc.com"}
+{"ts": "2026-11-19T18:13:59.010090+00:00", "text": "[~] Kontrol Ediliyor : Sinewix"}
+{"ts": "2026-11-19T18:13:59.269308+00:00", "text": "[+] Kontrol Edildi   : https://ydfvfdizipanel.ru"}
+{"ts": "2026-11-19T18:13:59.269734+00:00", "text": "[~] Kontrol Ediliyor : TLCtr"}
+{"ts": "2026-11-19T18:13:59.807390+00:00", "text": "[+] Kontrol Edildi   : https://www.tlctv.com.tr"}
+{"ts": "2026-11-19T18:13:59.807789+00:00", "text": "[~] Kontrol Ediliyor : TRanimaci"}
+{"ts": "2026-11-19T18:14:00.039022+00:00", "text": "[+] Kontrol Edildi   : https://tranimaci.com"}
+{"ts": "2026-11-19T18:14:00.039721+00:00", "text": "[~] Kontrol Ediliyor : TRasyalog"}
+{"ts": "2026-11-19T18:14:00.318196+00:00", "text": "[!] Kontrol Edilemedi : https://asyalog.co"}
+{"ts": "2026-11-19T18:14:00.318452+00:00", "text": "[!] SSLError : HTTPSConnectionPool(host='asyalog.co', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLCertVerificationError(1, \"[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'asyalog.co'. (_ssl.c:1147)\")))"}
+{"ts": "2026-11-19T18:14:00.318739+00:00", "text": "[~] Kontrol Ediliyor : TurkAnime"}
+{"ts": "2026-11-19T18:14:00.356023+00:00", "text": "[+] Kontrol Edildi   : https://www.turkanime.tv"}
+{"ts": "2026-11-19T18:14:00.356242+00:00", "text": "[~] Kontrol Ediliyor : Watch2Movies"}
+{"ts": "2026-11-19T18:14:00.700313+00:00", "text": "[+] Kontrol Edildi   : https://movies2watch.watch"}
+{"ts": "2026-11-19T18:14:00.700686+00:00", "text": "[~] Kontrol Ediliyor : WebdramaTurkey2"}
+{"ts": "2026-11-19T18:14:00.912850+00:00", "text": "[+] Kontrol Edildi   : https://webdramaturkey2.com"}
+{"ts": "2026-11-19T18:14:00.913087+00:00", "text": "[~] Kontrol Ediliyor : WebteIzle"}
+{"ts": "2026-11-19T18:14:01.233703+00:00", "text": "[+] Kontrol Edildi   : https://webteizle.info"}
