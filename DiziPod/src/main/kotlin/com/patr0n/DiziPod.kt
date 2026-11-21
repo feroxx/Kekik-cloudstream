@@ -5,7 +5,10 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jsoup.nodes.Element
+import java.net.URLEncoder
 
 class DiziPod : MainAPI() {
     override var mainUrl        = "https://dizipod.com"
@@ -85,13 +88,41 @@ class DiziPod : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val searchUrl = "$mainUrl/?s=${java.net.URLEncoder.encode(query, "UTF-8")}"
-        val document  = app.get(searchUrl).document
+        val encodedQuery = withContext(Dispatchers.IO) {
+            URLEncoder.encode(query, "UTF-8")
+        }
+        val searchUrl = "$mainUrl/?s=$encodedQuery"
+        val document = app.get(searchUrl, referer = "$mainUrl/").document
 
-        return document.select("a[href]").mapNotNull { el ->
-            val href = el.attr("abs:href")
+        return document.select("div.item").mapNotNull { item ->
+            val anchor = item.parent()?.takeIf { it.tagName() == "a" }
+                ?: item.selectFirst("a[href]")
+            val href = anchor?.attr("abs:href")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             if (!isValidContentUrl(href)) return@mapNotNull null
-            extractCardFromLink(el)
+
+            val title = item.selectFirst(".content .title")?.text()?.trim()
+                ?: item.selectFirst(".title")?.text()?.trim()
+                ?: return@mapNotNull null
+            if (title.isBlank()) return@mapNotNull null
+
+            val rawPoster = item.selectFirst(".img img")?.let { img ->
+                img.attr("abs:data-src").ifBlank {
+                    img.attr("abs:src").ifBlank {
+                        img.attr("data-src").ifBlank { img.attr("src") }
+                    }
+                }
+            }?.trim()?.takeIf { it.isNotBlank() }
+
+            val posterUrl = rawPoster?.let { fixUrl(it) }
+
+            val year = item.selectFirst(".meta .year")?.text()?.trim()?.toIntOrNull()
+            val score = item.selectFirst(".meta .imdb span")?.text()?.trim()?.toDoubleOrNull()
+
+            newTvSeriesSearchResponse(title, fixUrl(href), TvType.TvSeries) {
+                this.posterUrl = posterUrl
+                this.year = year
+                this.score = score?.let { Score.from10(it) }
+            }
         }.distinctBy { it.url }
     }
 

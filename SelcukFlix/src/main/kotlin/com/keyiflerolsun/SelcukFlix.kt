@@ -7,6 +7,8 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.jsoup.Jsoup
 import javax.crypto.Cipher
@@ -139,20 +141,25 @@ class SelcukFlix : MainAPI() {
         val results = mutableListOf<SearchResponse>()
 
         try {
-            val searchUrl = "$mainUrl/api/bg/searchcontent?searchterm=$query"
-            val response  = app.post(
-                url         = searchUrl,
-                headers     = mapOf(
-                    "User-Agent"       to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
-                    "Accept"           to "application/json, text/plain, */*",
-                    "Accept-Language"  to "en-US,en;q=0.5",
-                    "X-Requested-With" to "XMLHttpRequest",
-                    "Sec-Fetch-Site"   to "same-origin",
-                    "Sec-Fetch-Mode"   to "cors",
-                    "Sec-Fetch-Dest"   to "empty",
-                    "Referer"          to "$mainUrl/"
+            val searchUrl = "$mainUrl/api/mj"
+            val payload = """{"action":"searchContentFullText","params":[${jacksonMapper.writeValueAsString(query)}]}"""
+            val requestBody = payload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+
+            val response = app.post(
+                url = searchUrl,
+                headers = mapOf(
+                    "Accept" to "*/*",
+                    "Accept-Language" to "tr,en-GB;q=0.9,en;q=0.8,en-US;q=0.7,tr-TR;q=0.6",
+                    "Content-Type" to "application/json",
+                    "Origin" to mainUrl,
+                    "Referer" to "$mainUrl/arama-yap?s=${query.replace(" ", "+")}",
+                    "Sec-Fetch-Dest" to "empty",
+                    "Sec-Fetch-Mode" to "cors",
+                    "Sec-Fetch-Site" to "same-origin",
+                    "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36 Edg/158.0.0.0"
                 ),
-                referer     = "$mainUrl/",
+                requestBody = requestBody,
+                referer = "$mainUrl/arama-yap?s=${query.replace(" ", "+")}",
                 interceptor = interceptor
             ).text
 
@@ -165,7 +172,7 @@ class SelcukFlix : MainAPI() {
                         val title  = item.get("object_name")?.asText() ?: return@forEach
                         val slug   = item.get("used_slug")?.asText() ?: return@forEach
                         val poster = fixPosterUrl(item.get("object_poster_url")?.asText())
-                        val type   = item.get("type")?.asText() ?: ""
+                        val type   = item.get("used_type")?.asText() ?: ""
                         val href   = fixUrl(slug)
                         if (!href.contains("/seri-filmler/")) {
                             if (type == "Movies") {
