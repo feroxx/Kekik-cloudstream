@@ -163,24 +163,57 @@ class SelcukFlix : MainAPI() {
                 interceptor = interceptor
             ).text
 
-            val encryptedData = jacksonMapper.readTree(response)?.get("response")?.asText()
-            if (!encryptedData.isNullOrBlank()) {
-                val decoded = decryptAES(encryptedData)
-                if (decoded != null) {
-                    val json: JsonNode = jacksonMapper.readTree(decoded)
-                    json.get("result")?.forEach { item: JsonNode ->
-                        val title  = item.get("object_name")?.asText() ?: return@forEach
-                        val slug   = item.get("used_slug")?.asText() ?: return@forEach
-                        val poster = fixPosterUrl(item.get("object_poster_url")?.asText())
-                        val type   = item.get("used_type")?.asText() ?: ""
-                        val href   = fixUrl(slug)
-                        if (!href.contains("/seri-filmler/")) {
-                            if (type == "Movies") {
-                                results.add(newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster })
-                            } else {
-                                results.add(newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster })
-                            }
-                        }
+            val rootNode: JsonNode? = try {
+                jacksonMapper.readTree(response)
+            } catch (_: Exception) {
+                null
+            }
+
+            val encryptedData = rootNode?.get("response")?.asText()?.takeIf { it.isNotBlank() }
+            val decoded: String? = if (encryptedData != null) {
+                try {
+                    decryptAES(encryptedData)?.trim()?.takeIf { it.isNotBlank() }
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+
+// decoded varsa çözülmüş JSON'u, yoksa ham response/rootNode yapısını kullan
+            val targetNode: JsonNode? = when {
+                decoded != null -> try {
+                    jacksonMapper.readTree(decoded)
+                } catch (_: Exception) {
+                    null
+                }
+                rootNode != null -> rootNode.get("response")?.takeIf { !it.isTextual } ?: rootNode
+                else -> null
+            }
+
+            val itemsArray: JsonNode? = when {
+                targetNode == null -> null
+                targetNode.isArray -> targetNode
+                targetNode.has("result") && targetNode.get("result").isArray -> targetNode.get("result")
+                targetNode.has("results") && targetNode.get("results").isArray -> targetNode.get("results")
+                targetNode.has("data") && targetNode.get("data").isArray -> targetNode.get("data")
+                else -> null
+            }
+
+            itemsArray?.forEach { item: JsonNode ->
+                val title = item.get("object_name")?.asText()?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
+                val slug = item.get("used_slug")?.asText()?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
+                val poster = item.get("object_poster_url")?.asText()?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { fixUrl(it) }
+                val type = item.get("used_type")?.asText()?.trim() ?: ""
+                val href = fixUrl(slug)
+
+                if (!href.contains("/seri-filmler/")) {
+                    if (type.equals("Movies", ignoreCase = true) || type.equals("Movie", ignoreCase = true)) {
+                        results.add(newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster })
+                    } else {
+                        results.add(newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster })
                     }
                 }
             }
