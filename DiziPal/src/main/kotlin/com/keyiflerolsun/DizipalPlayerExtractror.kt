@@ -54,29 +54,14 @@ class DizipalPlayer : ExtractorApi() {
                 // Gate token hesaplama (404 hatasını engelleyen PoW doğrulaması)
                 val gateObj = npJson.optJSONObject("gate")
                 val gateN = gateObj?.optString("n")
-
-                val hasCustomGate = response.contains("NP_GATE")
-                val salt = if (hasCustomGate) {
-                    Regex("""String\.fromCharCode\(([\d,\s]+)\)""").find(response)?.let { match ->
-                        try {
-                            match.groupValues[1].split(",").map { it.trim().toInt().toChar() }.joinToString("")
-                        } catch (_: Exception) {
-                            null
-                        }
-                    } ?: "Lgj8415t4S"
-                } else {
-                    null
-                }
                 val gateB = gateObj?.optInt("b", 12) ?: 12
-                val defaultShift = 32 - gateB
-                val shift = Regex(""">>>\s*(\d+)""").find(response)?.groupValues?.get(1)?.toIntOrNull() ?: defaultShift
 
                 val token = if (!gateN.isNullOrEmpty()) {
-                    calculateGateToken(gateN, salt, shift)
+                    calculateGateToken(response, gateN, gateB)
                 } else {
                     ""
                 }
-                Log.d("DiziPal", "--> Gate token hesaplandı: '$token' (gateN=$gateN, salt=$salt, shift=$shift)")
+                Log.d("DiziPal", "--> Gate token hesaplandı: '$token' (gateN=$gateN, gateB=$gateB)")
 
                 // Altyazıları ayıkla
                 val subtitlesArr = npJson.optJSONArray("subtitles")
@@ -234,24 +219,82 @@ class DizipalPlayer : ExtractorApi() {
         }
     }
 
-    private fun calculateGateToken(gateN: String, salt: String?, shift: Int): String {
+    private fun calculateGateToken(html: String, gateN: String, gateB: Int): String {
         return try {
             val md = java.security.MessageDigest.getInstance("SHA-256")
-            val prefix = if (salt != null) "$gateN:$salt:" else "$gateN:"
+            val gateMatch = Regex("""window\.NP_GATE\s*=\s*function\s*\(([^)]+)\)\s*\{(.*?)\};""", RegexOption.DOT_MATCHES_ALL).find(html)
+
+            var radix = 10
+            var wordIdx = 0
+            var mask: Int? = null
+            var shift = 32 - gateB
+            var prefix = "$gateN:"
+            var suffix = ""
+
+            if (gateMatch != null) {
+                val params = gateMatch.groupValues[1].split(",").map { it.trim() }
+                val pN = params.getOrNull(0) ?: "_oh"
+                val pHash = params.getOrNull(1) ?: "_cng"
+                val body = gateMatch.groupValues[2]
+
+                val saltMatch = Regex("""var\s+([A-Za-z0-9_$]+)\s*=\s*String\.fromCharCode\(([\d,\s]+)\)""").find(body)
+                val saltVar = saltMatch?.groupValues?.get(1) ?: ""
+                val saltVal = saltMatch?.groupValues?.get(2)?.split(",")
+                    ?.mapNotNull { it.trim().toIntOrNull()?.toChar() }
+                    ?.joinToString("") ?: ""
+
+                val radixMatch = Regex("""var\s+([A-Za-z0-9_$]+)\s*=\s*[A-Za-z0-9_$]+\.toString\((\d+)\)""").find(body)
+                val nonceVar = radixMatch?.groupValues?.get(1) ?: ""
+                radix = radixMatch?.groupValues?.get(2)?.toIntOrNull() ?: 10
+
+                val callMatch = Regex(Regex.escape(pHash) + """\(([^)]+)\)\[(\d+)\]""").find(body)
+                val exprStr = callMatch?.groupValues?.get(1) ?: "$saltVar+$pN+'.'+$nonceVar"
+                wordIdx = callMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
+
+                mask = Regex("""\]\s*&\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
+                val shiftMatch = Regex("""\]\s*>>>\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
+                if (shiftMatch != null) shift = shiftMatch
+
+                val parts = exprStr.split("+").map { it.trim() }
+                val preBuilder = StringBuilder()
+                val sufBuilder = StringBuilder()
+                var seenNonce = false
+                for (p in parts) {
+                    if (p == nonceVar && nonceVar.isNotEmpty()) {
+                        seenNonce = true
+                        continue
+                    }
+                    val resolved = when {
+                        p == pN -> gateN
+                        p == saltVar && saltVar.isNotEmpty() -> saltVal
+                        (p.startsWith("'") && p.endsWith("'")) || (p.startsWith("\"") && p.endsWith("\"")) -> p.substring(1, p.length - 1)
+                        else -> ""
+                    }
+                    if (!seenNonce) preBuilder.append(resolved) else sufBuilder.append(resolved)
+                }
+                if (seenNonce) {
+                    prefix = preBuilder.toString()
+                    suffix = sufBuilder.toString()
+                }
+            }
+
             val prefixBytes = prefix.toByteArray(Charsets.UTF_8)
+            val suffixBytes = suffix.toByteArray(Charsets.UTF_8)
+            val byteOffset = (wordIdx.coerceIn(0, 7)) * 4
 
             for (i in 0 until 10_000_000) {
+                val nonce = i.toString(radix)
                 md.reset()
                 md.update(prefixBytes)
-                md.update(i.toString().toByteArray(Charsets.UTF_8))
+                md.update(nonce.toByteArray(Charsets.UTF_8))
+                if (suffixBytes.isNotEmpty()) md.update(suffixBytes)
                 val digest = md.digest()
-                val firstInt = ((digest[0].toInt() and 0xFF) shl 24) or
-                               ((digest[1].toInt() and 0xFF) shl 16) or
-                               ((digest[2].toInt() and 0xFF) shl 8) or
-                               (digest[3].toInt() and 0xFF)
-                if ((firstInt ushr shift) == 0) {
-                    return i.toString()
-                }
+                val word = ((digest[byteOffset].toInt() and 0xFF) shl 24) or
+                           ((digest[byteOffset + 1].toInt() and 0xFF) shl 16) or
+                           ((digest[byteOffset + 2].toInt() and 0xFF) shl 8) or
+                           (digest[byteOffset + 3].toInt() and 0xFF)
+                val matched = if (mask != null) (word and mask) == 0 else (word ushr shift) == 0
+                if (matched) return nonce
             }
             ""
         } catch (e: Exception) {

@@ -247,28 +247,49 @@ class Dizilla : MainAPI() {
                 )
             )
             val iframeHtml = iframeResponse.text
+            val domainRegex = """https?://[^/]+""".toRegex()
+            val domain = domainRegex.find(iframeResponse.url)?.value ?: "https://four.pichive.online"
 
-            val configJson = Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
+            val configJson = Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});\s*window\.""", RegexOption.DOT_MATCHES_ALL)
                 .find(iframeHtml)
                 ?.groupValues
                 ?.get(1)
-                ?: return false
+                ?: Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
+                    .find(iframeHtml)
+                    ?.groupValues
+                    ?.get(1)
+                ?: continue
 
             val config = org.json.JSONObject(configJson)
-            val subtitles = config.getJSONArray("subtitles")
+            val gateObj = config.optJSONObject("gate")
+            val gateN = gateObj?.optString("n")
+            val gateB = gateObj?.optInt("b", 12) ?: 12
+            val token = if (!gateN.isNullOrEmpty()) {
+                calculateGateToken(iframeHtml, gateN, gateB)
+            } else {
+                ""
+            }
 
-            for (i in 0 until subtitles.length()) {
-                val subtitle = subtitles.getJSONObject(i)
+            val subtitles = config.optJSONArray("subtitles")
+            if (subtitles != null) {
+                for (j in 0 until subtitles.length()) {
+                    val subtitle = subtitles.optJSONObject(j) ?: continue
 
-                val subtitleLang = subtitle.optString("label")
-                val subtitleUrl = subtitle.optString("url")
+                    val subtitleLang = subtitle.optString("label", "Altyazı")
+                    var subtitleUrl = subtitle.optString("url")
+                    if (subtitleUrl.isBlank()) continue
+                    if (token.isNotEmpty()) {
+                        val sep = if (subtitleUrl.contains("?")) "&" else "?"
+                        subtitleUrl += "${sep}p=$token"
+                    }
 
-                subtitleCallback.invoke(
-                    newSubtitleFile(
-                        lang = subtitleLang,
-                        url = subtitleUrl)
-                        {
+                    subtitleCallback.invoke(
+                        newSubtitleFile(
+                            lang = subtitleLang,
+                            url = subtitleUrl
+                        ) {
                             this.headers = mapOf(
+                                "Origin" to domain,
                                 "Referer" to iframeResponse.url,
                                 "User-Agent" to
                                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -276,29 +297,122 @@ class Dizilla : MainAPI() {
                                         "Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
                                 "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
                             )
-                        })
-            }
-
-
-            val sources = config.getJSONArray("sources")
-
-            val apiUrl = sources.getJSONObject(0).getString("master")
-
-            callback.invoke(
-                newExtractorLink(
-                    source = this.name,
-                    name = name,
-                    url = apiUrl,
-                    type = ExtractorLinkType.M3U8
-                ) {
-                    headers = mapOf(
-                        "Referer" to iframeResponse.url,
-                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
+                        }
                     )
                 }
-            )
+            }
+
+            val innerSources = config.optJSONArray("sources") ?: continue
+            for (j in 0 until innerSources.length()) {
+                val srcObj = innerSources.optJSONObject(j) ?: continue
+                var apiUrl = srcObj.optString("master")
+                if (apiUrl.isBlank()) continue
+                if (token.isNotEmpty()) {
+                    val sep = if (apiUrl.contains("?")) "&" else "?"
+                    apiUrl += "${sep}p=$token"
+                }
+
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = name,
+                        url = apiUrl,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = iframeResponse.url
+                        headers = mapOf(
+                            "Origin" to domain,
+                            "Referer" to iframeResponse.url,
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+                            "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
+                        )
+                    }
+                )
+            }
         }
         return true;
+    }
+
+    private fun calculateGateToken(html: String, gateN: String, gateB: Int): String {
+        return try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val gateMatch = Regex("""window\.NP_GATE\s*=\s*function\s*\(([^)]+)\)\s*\{(.*?)\};""", RegexOption.DOT_MATCHES_ALL).find(html)
+
+            var radix = 10
+            var wordIdx = 0
+            var mask: Int? = null
+            var shift = 32 - gateB
+            var prefix = "$gateN:"
+            var suffix = ""
+
+            if (gateMatch != null) {
+                val params = gateMatch.groupValues[1].split(",").map { it.trim() }
+                val pN = params.getOrNull(0) ?: "_ri"
+                val pHash = params.getOrNull(1) ?: "_mor"
+                val body = gateMatch.groupValues[2]
+
+                val saltMatch = Regex("""var\s+([A-Za-z0-9_$]+)\s*=\s*String\.fromCharCode\(([\d,\s]+)\)""").find(body)
+                val saltVar = saltMatch?.groupValues?.get(1) ?: ""
+                val saltVal = saltMatch?.groupValues?.get(2)?.split(",")
+                    ?.mapNotNull { it.trim().toIntOrNull()?.toChar() }
+                    ?.joinToString("") ?: ""
+
+                val radixMatch = Regex("""var\s+([A-Za-z0-9_$]+)\s*=\s*[A-Za-z0-9_$]+\.toString\((\d+)\)""").find(body)
+                val nonceVar = radixMatch?.groupValues?.get(1) ?: ""
+                radix = radixMatch?.groupValues?.get(2)?.toIntOrNull() ?: 10
+
+                val callMatch = Regex(Regex.escape(pHash) + """\(([^)]+)\)\[(\d+)\]""").find(body)
+                val exprStr = callMatch?.groupValues?.get(1) ?: "$pN+$saltVar+$nonceVar+$saltVar"
+                wordIdx = callMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
+
+                mask = Regex("""\]\s*&\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
+                val shiftMatch = Regex("""\]\s*>>>\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
+                if (shiftMatch != null) shift = shiftMatch
+
+                val parts = exprStr.split("+").map { it.trim() }
+                val preBuilder = StringBuilder()
+                val sufBuilder = StringBuilder()
+                var seenNonce = false
+                for (p in parts) {
+                    if (p == nonceVar && nonceVar.isNotEmpty()) {
+                        seenNonce = true
+                        continue
+                    }
+                    val resolved = when {
+                        p == pN -> gateN
+                        p == saltVar && saltVar.isNotEmpty() -> saltVal
+                        (p.startsWith("'") && p.endsWith("'")) || (p.startsWith("\"") && p.endsWith("\"")) -> p.substring(1, p.length - 1)
+                        else -> ""
+                    }
+                    if (!seenNonce) preBuilder.append(resolved) else sufBuilder.append(resolved)
+                }
+                if (seenNonce) {
+                    prefix = preBuilder.toString()
+                    suffix = sufBuilder.toString()
+                }
+            }
+
+            val prefixBytes = prefix.toByteArray(Charsets.UTF_8)
+            val suffixBytes = suffix.toByteArray(Charsets.UTF_8)
+            val byteOffset = (wordIdx.coerceIn(0, 7)) * 4
+
+            for (i in 0 until 10_000_000) {
+                val nonce = i.toString(radix)
+                md.reset()
+                md.update(prefixBytes)
+                md.update(nonce.toByteArray(Charsets.UTF_8))
+                if (suffixBytes.isNotEmpty()) md.update(suffixBytes)
+                val digest = md.digest()
+                val word = ((digest[byteOffset].toInt() and 0xFF) shl 24) or
+                           ((digest[byteOffset + 1].toInt() and 0xFF) shl 16) or
+                           ((digest[byteOffset + 2].toInt() and 0xFF) shl 8) or
+                           (digest[byteOffset + 3].toInt() and 0xFF)
+                val matched = if (mask != null) (word and mask) == 0 else (word ushr shift) == 0
+                if (matched) return nonce
+            }
+            ""
+        } catch (_: Exception) {
+            ""
+        }
     }
 }
