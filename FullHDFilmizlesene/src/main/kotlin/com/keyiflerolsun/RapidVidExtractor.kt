@@ -2,94 +2,119 @@
 
 package com.keyiflerolsun
 
-import android.util.Log
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-
+import android.util.Base64
+import org.json.JSONObject
+import java.nio.charset.Charset
 
 open class RapidVid : ExtractorApi() {
-    override val name            = "RapidVid"
-    override val mainUrl         = "https://rapidvid.net"
+    override val name = "RapidVid"
+    override val mainUrl = "https://rapidvid.org"
     override val requiresReferer = true
 
-    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val extRef   = referer ?: ""
-        val videoReq = app.get(url, referer=extRef).document
+    override suspend fun getUrl(
+        url: String,
+        referer: String?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        val extRef = referer ?: ""
+        val videoReq = app.get(url, referer = extRef).text
 
-        val script = videoReq.select("script").find { it.data().contains("jwSetup.sources") }?.data() ?: ""
+        val p8Regex = Regex(
+            """window\._p8\s*=\s*['"]([^'"]+)['"]"""
+        )
 
-        if (script.isNotEmpty()) {
-            val jwTrack = script.substringAfter("jwSetup.tracks =").substringBefore(";")
-            val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            val tracks: List<CaptionData> = objectMapper.readValue(jwTrack)
-            tracks.forEach { track ->
-                val lang = track.label?.replace("\\u0131", "ı")?.replace("\\u0130", "İ")?.replace("\\u00fc", "ü")?.replace("\\u00e7", "ç")
-                val url  = (track.file.replace("\\", ""))
-                if (lang != null){
-                    subtitleCallback.invoke(
-                        newSubtitleFile(lang, url)
+        val p8 = p8Regex.find(videoReq)
+            ?.groupValues
+            ?.get(1)
+
+        if (p8.isNullOrBlank()) {
+            println("_p8 bulunamadı")
+            return
+        }
+
+        val data = decodeP8(p8)
+
+        val cm = data.optString("cm")
+        val tm = data.optString("tm")
+        val ct = data.optJSONArray("ct")
+
+        if (ct != null) {
+            for (i in 0 until ct.length()) {
+                val caption = ct.getJSONObject(i)
+
+                val url = caption.optString("file")
+                val lang = caption.optString("label").trim()
+
+                if (url.isNotBlank()) {
+                    subtitleCallback(
+                        newSubtitleFile(
+                            lang = lang,
+                            url = url
+                        )
                     )
                 }
             }
-            val jwSetup = script.substringAfter("jwSetup.sources =").substringBefore(";")
-            println(jwSetup)
-            val regex = Regex("""av\('([^']+)'\)""")
-            val match = regex.find(jwSetup)
-            if (match != null) {
-                val encodedValue = match.groupValues[1]
-                val m3Url = av(encodedValue)
-                callback.invoke(
-                    newExtractorLink(
-                        source  = this.name,
-                        name    = this.name,
-                        url     = m3Url,
-                        ExtractorLinkType.M3U8
-                    ) {
-                        this.referer = mainUrl
-                        this.quality = Qualities.Unknown.value
-                    }
+        }
+
+        if (cm.isNotBlank()) {
+            callback(
+                newExtractorLink(
+                    source = this.name,
+                    name = "Rapidvid - CM",
+                    url = cm,
+                    type = ExtractorLinkType.M3U8
                 )
-            } else {
-                Log.d("Rapid", "No match found.")
+            )
+        }
+
+        if (tm.isNotBlank() && tm != cm) {
+            callback(
+                newExtractorLink(
+                    source = this.name,
+                    name = "Rapidvid - TM",
+                    url = tm,
+                    type = ExtractorLinkType.M3U8
+                )
+            )
+        }
+    }
+
+    private fun decodeP8(encoded: String): JSONObject {
+        // 1. Ters çevir ve Base64 decode et
+        val reversed = encoded.reversed()
+
+        val firstBytes = Base64.decode(
+            reversed,
+            Base64.DEFAULT
+        )
+
+        // JavaScript atob karşılığı: Latin-1 karakterleri
+        val first = String(
+            firstBytes,
+            Charset.forName("ISO-8859-1")
+        )
+
+        // 2. K9L anahtarına göre karakterleri geri kaydır
+        val key = "K9L"
+
+        val shifted = buildString {
+            first.forEachIndexed { index, char ->
+                val shift = (key[index % 3].code % 5) + 1
+                append((char.code - shift).toChar())
             }
         }
 
-    }
+        // 3. İkinci Base64 decode
+        val jsonBytes = Base64.decode(
+            shifted,
+            Base64.DEFAULT
+        )
 
-    fun av(o: String): String {
-        return decodeSecret(o)
-    }
+        val json = String(jsonBytes, Charsets.UTF_8)
 
-
-    fun decodeSecret(encodedString: String): String {
-        val reversedBase64Input = encodedString.reversed()
-        val tString = base64Decode(reversedBase64Input)
-        val oBuilder = StringBuilder()
-        val key = "K9L"
-        for (index in tString.indices) {
-            val keyChar = key[index % key.length]
-            val offset = keyChar.code % 5 + 1
-
-            val originalCharCode = tString[index].code
-            val transformedCharCode = originalCharCode - offset
-            oBuilder.append(transformedCharCode.toChar())
-        }
-
-        val finalResultBytes = base64Decode(oBuilder.toString())
-        return finalResultBytes
+        return JSONObject(json)
     }
 }
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class CaptionData(
-    @JsonProperty("kind") var kind: String,
-    @JsonProperty("file") var file: String,
-    @JsonProperty("label") var label: String? = null,
-)
