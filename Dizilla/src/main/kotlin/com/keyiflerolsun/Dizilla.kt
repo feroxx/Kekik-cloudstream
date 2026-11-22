@@ -27,6 +27,7 @@ import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.newSubtitleFile
+import java.net.URLEncoder
 
 
 class Dizilla : MainAPI() {
@@ -250,73 +251,124 @@ class Dizilla : MainAPI() {
             val domainRegex = """https?://[^/]+""".toRegex()
             val domain = domainRegex.find(iframeResponse.url)?.value ?: "https://four.pichive.online"
 
-            val configJson = Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});\s*window\.""", RegexOption.DOT_MATCHES_ALL)
-                .find(iframeHtml)
-                ?.groupValues
-                ?.get(1)
-                ?: Regex("""window\.NP_CONFIG\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
-                    .find(iframeHtml)
-                    ?.groupValues
-                    ?.get(1)
-                ?: continue
+            val regex1 = Regex(
+                """window\.NP_CONFIG\s*=\s*(\{.*?\});""",
+                RegexOption.DOT_MATCHES_ALL
+            )
 
-            val config = org.json.JSONObject(configJson)
-            val gateObj = config.optJSONObject("gate")
-            val gateN = gateObj?.optString("n")
-            val gateB = gateObj?.optInt("b", 12) ?: 12
-            val token = if (!gateN.isNullOrEmpty()) {
-                calculateGateToken(iframeHtml, gateN, gateB)
-            } else {
-                ""
-            }
+            val regex2 = Regex(
+                """window\.openPlayer\(\s*['"]([^'"]+)['"]""",
+                RegexOption.DOT_MATCHES_ALL
+            )
 
-            val subtitles = config.optJSONArray("subtitles")
-            if (subtitles != null) {
-                for (j in 0 until subtitles.length()) {
-                    val subtitle = subtitles.optJSONObject(j) ?: continue
+            val match1 = regex1.find(iframeHtml)?.groupValues?.get(1)
 
-                    val subtitleLang = subtitle.optString("label", "Altyazı")
-                    var subtitleUrl = subtitle.optString("url")
-                    if (subtitleUrl.isBlank()) continue
+            val match2 = regex2.find(iframeHtml)?.groupValues?.get(1)
+
+
+            if (match1 != null) {
+                val config = org.json.JSONObject(match1)
+                val gateObj = config.optJSONObject("gate")
+                val gateN = gateObj?.optString("n")
+                val gateB = gateObj?.optInt("b", 12) ?: 12
+                val token = if (!gateN.isNullOrEmpty()) {
+                    calculateGateToken(iframeHtml, gateN, gateB)
+                } else {
+                    ""
+                }
+
+                val subtitles = config.optJSONArray("subtitles")
+                if (subtitles != null) {
+                    for (j in 0 until subtitles.length()) {
+                        val subtitle = subtitles.optJSONObject(j) ?: continue
+
+                        val subtitleLang = subtitle.optString("label", "Altyazı")
+                        var subtitleUrl = subtitle.optString("url")
+                        if (subtitleUrl.isBlank()) continue
+                        if (token.isNotEmpty()) {
+                            val sep = if (subtitleUrl.contains("?")) "&" else "?"
+                            subtitleUrl += "${sep}p=$token"
+                        }
+
+                        subtitleCallback.invoke(
+                            newSubtitleFile(
+                                lang = subtitleLang,
+                                url = subtitleUrl
+                            ) {
+                                this.headers = mapOf(
+                                    "Origin" to domain,
+                                    "Referer" to iframeResponse.url,
+                                    "User-Agent" to
+                                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                                            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                            "Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+                                    "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
+                                )
+                            }
+                        )
+                    }
+                }
+
+                val innerSources = config.optJSONArray("sources") ?: continue
+                for (j in 0 until innerSources.length()) {
+                    val srcObj = innerSources.optJSONObject(j) ?: continue
+                    var apiUrl = srcObj.optString("master")
+                    if (apiUrl.isBlank()) continue
                     if (token.isNotEmpty()) {
-                        val sep = if (subtitleUrl.contains("?")) "&" else "?"
-                        subtitleUrl += "${sep}p=$token"
+                        val sep = if (apiUrl.contains("?")) "&" else "?"
+                        apiUrl += "${sep}p=$token"
                     }
 
-                    subtitleCallback.invoke(
-                        newSubtitleFile(
-                            lang = subtitleLang,
-                            url = subtitleUrl
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = name,
+                            url = apiUrl,
+                            type = ExtractorLinkType.M3U8
                         ) {
-                            this.headers = mapOf(
+                            this.referer = iframeResponse.url
+                            headers = mapOf(
                                 "Origin" to domain,
                                 "Referer" to iframeResponse.url,
-                                "User-Agent" to
-                                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                        "Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
                                 "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
                             )
                         }
                     )
                 }
-            }
+                return true;
+            } else if (match2 != null) {
+                val encodedPlayList = URLEncoder.encode(match2, "UTF-8")
 
-            val innerSources = config.optJSONArray("sources") ?: continue
-            for (j in 0 until innerSources.length()) {
-                val srcObj = innerSources.optJSONObject(j) ?: continue
-                var apiUrl = srcObj.optString("master")
-                if (apiUrl.isBlank()) continue
-                if (token.isNotEmpty()) {
-                    val sep = if (apiUrl.contains("?")) "&" else "?"
-                    apiUrl += "${sep}p=$token"
-                }
+                val apiUrl = "https://pichive.online/source2.php?v=$encodedPlayList"
 
+                val iframeResponse2 = app.get(
+                    apiUrl,
+                    interceptor = interceptor,
+                    headers = mapOf(
+                        "Referer" to iframeResponse.url,
+                        "User-Agent" to
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                "Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
+                    )
+                )
+                val iframeHtml = iframeResponse2.text
+                val config = org.json.JSONObject(iframeHtml)
+                val file = config
+                    .optJSONArray("playlist")
+                    ?.optJSONObject(0)
+                    ?.optJSONArray("sources")
+                    ?.optJSONObject(0)
+                    ?.optString("file")
+                    .orEmpty()
+                val streamUrl = file.replace("/m.php?v=", "/master.m3u8?v=")
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
                         name = name,
-                        url = apiUrl,
+                        url = streamUrl,
                         type = ExtractorLinkType.M3U8
                     ) {
                         this.referer = iframeResponse.url
@@ -328,15 +380,19 @@ class Dizilla : MainAPI() {
                         )
                     }
                 )
+                return true;
             }
         }
-        return true;
+        return false;
     }
 
     private fun calculateGateToken(html: String, gateN: String, gateB: Int): String {
         return try {
             val md = java.security.MessageDigest.getInstance("SHA-256")
-            val gateMatch = Regex("""window\.NP_GATE\s*=\s*function\s*\(([^)]+)\)\s*\{(.*?)\};""", RegexOption.DOT_MATCHES_ALL).find(html)
+            val gateMatch = Regex(
+                """window\.NP_GATE\s*=\s*function\s*\(([^)]+)\)\s*\{(.*?)\};""",
+                RegexOption.DOT_MATCHES_ALL
+            ).find(html)
 
             var radix = 10
             var wordIdx = 0
@@ -366,7 +422,8 @@ class Dizilla : MainAPI() {
                 wordIdx = callMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
 
                 mask = Regex("""\]\s*&\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
-                val shiftMatch = Regex("""\]\s*>>>\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
+                val shiftMatch =
+                    Regex("""\]\s*>>>\s*(\d+)\s*\)\s*===\s*0""").find(body)?.groupValues?.get(1)?.toIntOrNull()
                 if (shiftMatch != null) shift = shiftMatch
 
                 val parts = exprStr.split("+").map { it.trim() }
@@ -381,7 +438,11 @@ class Dizilla : MainAPI() {
                     val resolved = when {
                         p == pN -> gateN
                         p == saltVar && saltVar.isNotEmpty() -> saltVal
-                        (p.startsWith("'") && p.endsWith("'")) || (p.startsWith("\"") && p.endsWith("\"")) -> p.substring(1, p.length - 1)
+                        (p.startsWith("'") && p.endsWith("'")) || (p.startsWith("\"") && p.endsWith("\"")) -> p.substring(
+                            1,
+                            p.length - 1
+                        )
+
                         else -> ""
                     }
                     if (!seenNonce) preBuilder.append(resolved) else sufBuilder.append(resolved)
@@ -404,9 +465,9 @@ class Dizilla : MainAPI() {
                 if (suffixBytes.isNotEmpty()) md.update(suffixBytes)
                 val digest = md.digest()
                 val word = ((digest[byteOffset].toInt() and 0xFF) shl 24) or
-                           ((digest[byteOffset + 1].toInt() and 0xFF) shl 16) or
-                           ((digest[byteOffset + 2].toInt() and 0xFF) shl 8) or
-                           (digest[byteOffset + 3].toInt() and 0xFF)
+                        ((digest[byteOffset + 1].toInt() and 0xFF) shl 16) or
+                        ((digest[byteOffset + 2].toInt() and 0xFF) shl 8) or
+                        (digest[byteOffset + 3].toInt() and 0xFF)
                 val matched = if (mask != null) (word and mask) == 0 else (word ushr shift) == 0
                 if (matched) return nonce
             }
