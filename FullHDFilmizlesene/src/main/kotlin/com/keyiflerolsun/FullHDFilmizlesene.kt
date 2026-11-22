@@ -24,11 +24,11 @@ class FullHDFilmizlesene : MainAPI() {
     override val supportedTypes       = setOf(TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/en-cok-izlenen-filmler-izle-hd/"            to "En Çok izlenen Filmler",
-        "${mainUrl}/filmizle/imdb-puani-yuksek-filmler-izle-1/" to "IMDB Puanı Yüksek Filmler",
+        //"${mainUrl}/en-cok-izlenen-filmler"            to "En Çok izlenen Filmler",
+        //"${mainUrl}/filmizle/imdb-puani-yuksek-filmler" to "IMDB Puanı Yüksek Filmler",
         "${mainUrl}/filmizle/aile-filmleri-hdf-izle/"           to "Aile Filmleri",
         "${mainUrl}/filmizle/aksiyon-filmleri-hdf-izle/"         to "Aksiyon Filmleri",
-        "${mainUrl}/filmizle/animasyon-filmleri-fhd-izle/"      to "Animasyon Filmleri",
+        //"${mainUrl}/filmizle/animasyon-filmleri-izle"      to "Animasyon Filmleri",
         "${mainUrl}/filmizle/belgesel-filmleri-izle/"           to "Belgeseller",
         "${mainUrl}/filmizle/bilim-kurgu-filmleri-izle-2/"      to "Bilim Kurgu Filmleri",
         "${mainUrl}/filmizle/bluray-filmler-izle/"              to "Blu Ray Filmler",
@@ -37,7 +37,6 @@ class FullHDFilmizlesene : MainAPI() {
         "${mainUrl}/filmizle/fantastik-filmler-hd-izle/"        to "Fantastik Filmler",
         "${mainUrl}/filmizle/gerilim-filmleri-fhd-izle/"        to "Gerilim Filmleri",
         "${mainUrl}/filmizle/gizem-filmleri-hd-izle/"           to "Gizem Filmleri",
-        "${mainUrl}/filmizle/hint-filmleri-fhd-izle/"            to "Hint Filmleri",
         "${mainUrl}/filmizle/komedi-filmleri-fhd-izle/"         to "Komedi Filmleri",
         "${mainUrl}/filmizle/korku-filmleri-izle-3/"            to "Korku Filmleri",
         "${mainUrl}/filmizle/macera-filmleri-fhd-izle/"         to "Macera Filmleri",

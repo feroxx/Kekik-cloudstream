@@ -1,7 +1,7 @@
 # ☁️ CloudStream için Türkçe Eklentiler
 
 
-Kısakod: feroxxcs3
+Kısakod: **feroxxcs3** yada **!feroxxcs3**
 
 Çalışmayan eklenti ya da eklenmesini istediğiniz eklenti istekleriniz icin issue açabilirsiniz
 [Döküman](https://recloudstream.github.io/csdocs/) **━** [Resmi Site](https://dweb.link/ipns/cloudstream.on.fleek.co/) **━** [Wiki](https://cloudstream.miraheze.org/wiki/Main_Page)
